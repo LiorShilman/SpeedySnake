@@ -6,12 +6,18 @@ export const BOARD_WIDTH = 32;
 export const BOARD_HEIGHT = 22;
 
 export const LEVEL_INFO = [
-  { level: 1, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 30, scorePerFood: 2, foodToFire: 10 },
-  { level: 2, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 25, scorePerFood: 3, foodToFire: 10 },
-  { level: 3, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 20, scorePerFood: 6, foodToFire: 10 },
-  { level: 4, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 15, scorePerFood: 8, foodToFire: 5 },
-  { level: 5, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 15, scorePerFood: 10, foodToFire: 5 },
-  { level: 6, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 10, scorePerFood: 12, foodToFire: 3 },
+  { level: 1, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 30, scorePerFood: 2, foodToFire: 10,
+    p2head: { x: 15, y: 2 }, p2tail: { x: 22, y: 2 }, p2direction: { x: -1, y: 0 } },
+  { level: 2, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 25, scorePerFood: 3, foodToFire: 10,
+    p2head: { x: 15, y: 2 }, p2tail: { x: 22, y: 2 }, p2direction: { x: -1, y: 0 } },
+  { level: 3, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 20, scorePerFood: 6, foodToFire: 10,
+    p2head: { x: 15, y: 2 }, p2tail: { x: 22, y: 2 }, p2direction: { x: -1, y: 0 } },
+  { level: 4, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 15, scorePerFood: 8, foodToFire: 5,
+    p2head: { x: 15, y: 2 }, p2tail: { x: 22, y: 2 }, p2direction: { x: -1, y: 0 } },
+  { level: 5, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 15, scorePerFood: 10, foodToFire: 5,
+    p2head: { x: 15, y: 2 }, p2tail: { x: 22, y: 2 }, p2direction: { x: -1, y: 0 } },
+  { level: 6, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 10, scorePerFood: 12, foodToFire: 3,
+    p2head: { x: 15, y: 2 }, p2tail: { x: 22, y: 2 }, p2direction: { x: -1, y: 0 } },
 ];
 
 export const SPEED_LEVELS = [350, 300, 250, 200, 140, 40];

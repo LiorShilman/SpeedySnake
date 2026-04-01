@@ -2,7 +2,7 @@ import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { BOARD_WIDTH, BOARD_HEIGHT, SPEED_LEVELS } from '../data/levels';
-import { useGameStore, CELL, LEVEL_THEMES } from '../store/gameStore';
+import { useGameStore, CELL, LEVEL_THEMES, PLAYER_HUES } from '../store/gameStore';
 
 const CELL_SIZE = 1;
 const WALL_HEIGHT = 1.2;
@@ -115,17 +115,16 @@ function Trail({ trail, level }) {
   );
 }
 
-// ===== SNAKE SEGMENT =====
-function SnakeSegment({ index, snakeLength, direction, hasFire, hasShield, level }) {
+// ===== SNAKE SEGMENT (multiplayer-aware) =====
+function SnakeSegment({ index, snakeLength, direction, hasFire, hasShield, level, playerId, colorHue }) {
   const groupRef = useRef();
   const time = useRef(0);
   const isHead = index === snakeLength - 1;
   const isTail = index === 0;
   const t = index / snakeLength;
   const scale = isHead ? 1.1 : isTail ? 0.6 : 0.7 + t * 0.25;
-  const theme = LEVEL_THEMES[(level - 1) % 6];
 
-  const hue = 0.33 + t * 0.15;
+  const hue = colorHue + t * 0.15;
   const color = useMemo(() => new THREE.Color().setHSL(hue, 0.9, isHead ? 0.55 : 0.4 + t * 0.15), [hue, isHead, t]);
   const emissiveColor = useMemo(() => new THREE.Color().setHSL(hue, 1, 0.3), [hue]);
 
@@ -134,7 +133,9 @@ function SnakeSegment({ index, snakeLength, direction, hasFire, hasShield, level
     time.current += 0.016;
 
     const state = useGameStore.getState();
-    const { snake, prevSnake, tickTimestamp } = state;
+    const player = state.players[playerId];
+    if (!player) return;
+    const { snake, prevSnake } = player;
     const tickRate = SPEED_LEVELS[state.speed - 1] || 300;
 
     if (!snake[index]) return;
@@ -144,7 +145,7 @@ function SnakeSegment({ index, snakeLength, direction, hasFire, hasShield, level
     const prevIdx = index - offset;
     const prev = prevIdx >= 0 && prevIdx < prevSnake.length ? prevSnake[prevIdx] : curr;
 
-    const elapsed = performance.now() - tickTimestamp;
+    const elapsed = performance.now() - state.tickTimestamp;
     const lerp = Math.min(elapsed / tickRate, 1);
 
     const px = prev.x + (curr.x - prev.x) * lerp;
@@ -208,12 +209,22 @@ function SnakeSegment({ index, snakeLength, direction, hasFire, hasShield, level
   );
 }
 
-function Snake({ snake, direction, hasFire, hasShield, level }) {
-  if (!snake || snake.length === 0) return null;
+function PlayerSnake({ playerId, player, level }) {
+  if (!player || !player.alive || !player.snake || player.snake.length === 0) return null;
   return (
     <group>
-      {snake.map((_, i) => (
-        <SnakeSegment key={i} index={i} snakeLength={snake.length} direction={direction} hasFire={hasFire} hasShield={hasShield} level={level} />
+      {player.snake.map((_, i) => (
+        <SnakeSegment
+          key={i}
+          index={i}
+          snakeLength={player.snake.length}
+          direction={player.direction}
+          hasFire={player.hasFire}
+          hasShield={player.hasShield}
+          level={level}
+          playerId={playerId}
+          colorHue={player.colorHue}
+        />
       ))}
     </group>
   );
@@ -525,15 +536,11 @@ function Ground({ level }) {
 export default function GameBoard() {
   const groupRef = useRef();
   const board = useGameStore(s => s.board);
-  const snake = useGameStore(s => s.snake);
-  const direction = useGameStore(s => s.direction);
+  const players = useGameStore(s => s.players);
   const food = useGameStore(s => s.food);
   const firePickup = useGameStore(s => s.firePickup);
-  const hasFire = useGameStore(s => s.hasFire);
-  const hasShield = useGameStore(s => s.hasShield);
   const particles = useGameStore(s => s.particles);
   const screenShake = useGameStore(s => s.screenShake);
-  const trail = useGameStore(s => s.trail);
   const level = useGameStore(s => s.level);
   const portalA = useGameStore(s => s.portalA);
   const portalB = useGameStore(s => s.portalB);
@@ -544,6 +551,15 @@ export default function GameBoard() {
   const bossDirection = useGameStore(s => s.bossDirection);
   const bossActive = useGameStore(s => s.bossActive);
   const bossAlive = useGameStore(s => s.bossAlive);
+
+  // Gather all trails from all players
+  const allTrails = useMemo(() => {
+    const trails = [];
+    for (const p of Object.values(players)) {
+      if (p.trail) trails.push(...p.trail);
+    }
+    return trails;
+  }, [players]);
 
   useFrame(() => {
     if (groupRef.current && screenShake > 0) {
@@ -562,10 +578,15 @@ export default function GameBoard() {
   return (
     <group ref={groupRef}>
       <Ground level={currentLevel} />
-      <Trail trail={trail} level={currentLevel} />
+      <Trail trail={allTrails} level={currentLevel} />
       <Walls board={board} level={currentLevel} />
       <RisingWalls risingWalls={risingWalls} level={currentLevel} />
-      <Snake snake={snake} direction={direction} hasFire={hasFire} hasShield={hasShield} level={currentLevel} />
+
+      {/* Render each player's snake */}
+      {Object.entries(players).map(([id, player]) => (
+        <PlayerSnake key={id} playerId={Number(id)} player={player} level={currentLevel} />
+      ))}
+
       <BossSnake bossSnake={bossSnake} bossDirection={bossDirection} bossActive={bossActive} bossAlive={bossAlive} />
       <Food position={food} />
       <FirePickup position={firePickup} />

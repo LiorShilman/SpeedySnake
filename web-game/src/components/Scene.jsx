@@ -14,7 +14,7 @@ function toWorld(x, y) {
   return [x + BOARD_OFFSET_X + 0.5, 0, y + BOARD_OFFSET_Z + 0.5];
 }
 
-// Dynamic camera that gently follows the snake head
+// Dynamic camera that follows snake head in single, centers board in versus
 function DynamicCamera() {
   const controlsRef = useRef();
   const targetPos = useRef(new THREE.Vector3(0, 0, 0));
@@ -22,13 +22,21 @@ function DynamicCamera() {
   useFrame(() => {
     if (!controlsRef.current) return;
     const state = useGameStore.getState();
-    const { snake, gameState } = state;
+    const { players, gameState, mode } = state;
 
-    if (gameState === 'playing' && snake.length > 0) {
-      const head = snake[snake.length - 1];
-      const [wx, , wz] = toWorld(head.x, head.y);
-      // Smoothly lerp toward head position, with subtle offset
-      targetPos.current.lerp(new THREE.Vector3(wx * 0.3, 0, wz * 0.3), 0.03);
+    if (gameState === 'playing') {
+      if (mode === 'versus') {
+        // In versus mode, keep camera centered on the board
+        targetPos.current.lerp(new THREE.Vector3(0, 0, 0), 0.05);
+      } else {
+        // Single player: follow P1 head
+        const p1 = players[0];
+        if (p1 && p1.alive && p1.snake.length > 0) {
+          const head = p1.snake[p1.snake.length - 1];
+          const [wx, , wz] = toWorld(head.x, head.y);
+          targetPos.current.lerp(new THREE.Vector3(wx * 0.3, 0, wz * 0.3), 0.03);
+        }
+      }
       controlsRef.current.target.copy(targetPos.current);
     } else {
       targetPos.current.lerp(new THREE.Vector3(0, 0, 0), 0.05);

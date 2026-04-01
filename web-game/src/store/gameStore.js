@@ -14,6 +14,11 @@ const CELL = {
   SCORE_ZONE: 14,
 };
 
+// Board cell encoding per player
+const PLAYER_BODY = [50, 51];  // P1=50, P2=51
+const PLAYER_HEAD = [100, 101]; // P1=100, P2=101
+const ALL_SNAKE_CELLS = new Set([50, 51, 100, 101]);
+
 export { CELL };
 
 const DIR = {
@@ -23,7 +28,6 @@ const DIR = {
   RIGHT: { x: 1, y: 0 },
 };
 
-// Level color themes
 export const LEVEL_THEMES = [
   { primary: '#4466ff', secondary: '#00ff88', bg: '#050510', wallColor: '#2244aa', wallEmissive: '#3355ff', name: 'Neon Blue' },
   { primary: '#ff44aa', secondary: '#ffaa00', bg: '#0a0508', wallColor: '#882244', wallEmissive: '#cc3366', name: 'Cyber Pink' },
@@ -33,13 +37,20 @@ export const LEVEL_THEMES = [
   { primary: '#ff2244', secondary: '#ff8844', bg: '#0a0202', wallColor: '#881122', wallEmissive: '#cc2244', name: 'Inferno' },
 ];
 
+// Player color hues
+const PLAYER_HUES = [0.33, 0.7]; // P1 green, P2 blue-purple
+export { PLAYER_HUES };
+
 function deepCopyBoard(level) {
   return level.map(row => [...row]);
 }
 
-function getRandomEmptyCell(board, excludeSnake = []) {
+function getRandomEmptyCell(board, excludeSnakes = []) {
+  const snakeSet = new Set();
+  for (const snake of excludeSnakes) {
+    for (const s of snake) snakeSet.add(`${s.x},${s.y}`);
+  }
   const empty = [];
-  const snakeSet = new Set(excludeSnake.map(s => `${s.x},${s.y}`));
   for (let y = 1; y < BOARD_HEIGHT - 1; y++) {
     for (let x = 1; x < BOARD_WIDTH - 1; x++) {
       if (board[y][x] === CELL.BLANK && !snakeSet.has(`${x},${y}`)) {
@@ -51,50 +62,69 @@ function getRandomEmptyCell(board, excludeSnake = []) {
   return empty[Math.floor(Math.random() * empty.length)];
 }
 
-function createInitialSnake(info) {
+function createSnake(head, tail, direction) {
   const segments = [];
-  const headX = info.head.x;
-  const tailX = info.tail.x;
-  const y = info.head.y;
-  for (let x = tailX; x <= headX; x++) {
-    segments.push({ x, y });
+  if (direction.x !== 0) {
+    const step = Math.sign(head.x - tail.x);
+    for (let x = tail.x; x !== head.x + step; x += step) {
+      segments.push({ x, y: head.y });
+    }
+  } else {
+    const step = Math.sign(head.y - tail.y);
+    for (let y = tail.y; y !== head.y + step; y += step) {
+      segments.push({ x: head.x, y });
+    }
   }
   return segments;
 }
 
-// Distance between two points on the grid
 function dist(a, b) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
+function createPlayer(snake, direction, hue) {
+  return {
+    snake,
+    prevSnake: snake.map(s => ({ ...s })),
+    direction: { ...direction },
+    nextDirection: { ...direction },
+    score: 0,
+    foodEaten: 0,
+    hasFire: false,
+    hasShield: false,
+    shieldHits: 0,
+    hasMagnet: false,
+    magnetTimer: 0,
+    isSlowMo: false,
+    slowMoTimer: 0,
+    scoreMultiplier: 1,
+    alive: true,
+    trail: [],
+    colorHue: hue,
+  };
+}
+
+function getAllSnakes(players) {
+  return Object.values(players).filter(p => p.alive).map(p => p.snake);
+}
+
 export const useGameStore = create((set, get) => ({
+  // Mode
+  mode: 'single', // 'single' | 'versus'
+
   // Game state
   gameState: 'menu',
   board: null,
-  snake: [],
-  prevSnake: [],
   tickTimestamp: 0,
-  direction: { ...DIR.RIGHT },
-  nextDirection: { ...DIR.RIGHT },
   food: null,
   firePickup: null,
-  hasFire: false,
-
-  // Portals
   portalA: null,
   portalB: null,
-
-  // Power-ups
-  hasShield: false,
-  shieldHits: 0,
-  hasMagnet: false,
-  magnetTimer: 0,
-  isSlowMo: false,
-  slowMoTimer: 0,
-  powerupOnBoard: null, // { type, pos }
-
-  // Score zones
+  powerupOnBoard: null,
   scoreZones: [],
+
+  // Players map
+  players: {},
 
   // Boss
   bossSnake: [],
@@ -103,63 +133,67 @@ export const useGameStore = create((set, get) => ({
   bossActive: false,
   bossAlive: false,
 
-  // Trail
-  trail: [], // { x, y, life, color }
-
   // Stats
-  score: 0,
   level: 1,
   speed: 1,
   difficulty: 0,
-  foodEaten: 0,
   highScore: parseInt(localStorage.getItem('snakeHighScore') || '0'),
 
   // Visual effects
   particles: [],
   screenShake: 0,
-  comboCount: 0,
-  lastEatTime: 0,
+  risingWalls: [],
   nearMiss: false,
   nearMissTimer: 0,
 
   // Level transition
   showLevelBanner: false,
 
-  // Animated walls (walls that are still "rising")
-  risingWalls: [], // { x, y, progress (0->1), id }
-
-  // Leaderboard
+  // Leaderboard / Replay
   leaderboard: JSON.parse(localStorage.getItem('snakeLeaderboard') || '[]'),
-
-  // Replay
   replayData: [],
   isRecording: false,
   bestReplay: JSON.parse(localStorage.getItem('snakeBestReplay') || 'null'),
 
+  // Winner (for versus)
+  winner: null,
+
   setDifficulty: (d) => set({ difficulty: d }),
   setSpeed: (s) => set({ speed: s }),
+  setMode: (m) => set({ mode: m }),
 
   startGame: () => {
     const state = get();
     const levelIdx = 0;
     const info = LEVEL_INFO[levelIdx];
     const board = deepCopyBoard(LEVELS[levelIdx]);
-    const snake = createInitialSnake(info);
 
-    snake.forEach((seg, i) => {
-      board[seg.y][seg.x] = i === snake.length - 1 ? 100 : 50;
+    // Create P1
+    const snake1 = createSnake(info.head, info.tail, info.direction);
+    snake1.forEach((seg, i) => {
+      board[seg.y][seg.x] = i === snake1.length - 1 ? PLAYER_HEAD[0] : PLAYER_BODY[0];
     });
 
-    const foodPos = getRandomEmptyCell(board, snake);
+    const players = {
+      0: createPlayer(snake1, info.direction, PLAYER_HUES[0]),
+    };
+
+    // Create P2 in versus mode
+    if (state.mode === 'versus') {
+      const snake2 = createSnake(info.p2head, info.p2tail, info.p2direction);
+      snake2.forEach((seg, i) => {
+        board[seg.y][seg.x] = i === snake2.length - 1 ? PLAYER_HEAD[1] : PLAYER_BODY[1];
+      });
+      players[1] = createPlayer(snake2, info.p2direction, PLAYER_HUES[1]);
+    }
+
+    const allSnakes = getAllSnakes(players);
+    const foodPos = getRandomEmptyCell(board, allSnakes);
     if (foodPos) board[foodPos.y][foodPos.x] = CELL.FOOD;
 
-    // Place portals on levels >= 2
-    let portalA = null, portalB = null;
-
-    // Place score zones
     const scoreZones = [];
     for (let i = 0; i < 2; i++) {
-      const pos = getRandomEmptyCell(board, snake);
+      const pos = getRandomEmptyCell(board, allSnakes);
       if (pos) {
         board[pos.y][pos.x] = CELL.SCORE_ZONE;
         scoreZones.push(pos);
@@ -169,33 +203,23 @@ export const useGameStore = create((set, get) => ({
     set({
       gameState: 'playing',
       board,
-      snake,
-      prevSnake: snake.map(s => ({ ...s })),
       tickTimestamp: performance.now(),
-      direction: { ...DIR.RIGHT },
-      nextDirection: { ...DIR.RIGHT },
       food: foodPos,
       firePickup: null,
-      hasFire: false,
-      portalA, portalB,
-      hasShield: false, shieldHits: 0,
-      hasMagnet: false, magnetTimer: 0,
-      isSlowMo: false, slowMoTimer: 0,
+      portalA: null, portalB: null,
       powerupOnBoard: null,
       scoreZones,
+      players,
       bossSnake: [], prevBossSnake: [],
       bossDirection: { ...DIR.LEFT },
       bossActive: false, bossAlive: false,
-      trail: [],
-      score: 0,
       level: 1,
-      foodEaten: 0,
       particles: [],
       screenShake: 0,
-      comboCount: 0,
-      showLevelBanner: false,
       risingWalls: [],
       nearMiss: false, nearMissTimer: 0,
+      showLevelBanner: false,
+      winner: null,
       replayData: [],
       isRecording: true,
     });
@@ -206,44 +230,54 @@ export const useGameStore = create((set, get) => ({
     const levelIdx = levelNum - 1;
     const info = LEVEL_INFO[levelIdx];
     const board = deepCopyBoard(LEVELS[levelIdx]);
-    const snake = createInitialSnake(info);
 
-    snake.forEach((seg, i) => {
-      board[seg.y][seg.x] = i === snake.length - 1 ? 100 : 50;
+    const snake1 = createSnake(info.head, info.tail, info.direction);
+    snake1.forEach((seg, i) => {
+      board[seg.y][seg.x] = i === snake1.length - 1 ? PLAYER_HEAD[0] : PLAYER_BODY[0];
     });
 
-    const foodPos = getRandomEmptyCell(board, snake);
+    const players = {
+      0: createPlayer(snake1, info.direction, PLAYER_HUES[0]),
+    };
+
+    if (state.mode === 'versus') {
+      const snake2 = createSnake(info.p2head, info.p2tail, info.p2direction);
+      snake2.forEach((seg, i) => {
+        board[seg.y][seg.x] = i === snake2.length - 1 ? PLAYER_HEAD[1] : PLAYER_BODY[1];
+      });
+      players[1] = createPlayer(snake2, info.p2direction, PLAYER_HUES[1]);
+    }
+
+    const allSnakes = getAllSnakes(players);
+    const foodPos = getRandomEmptyCell(board, allSnakes);
     if (foodPos) board[foodPos.y][foodPos.x] = CELL.FOOD;
 
     // Portals on levels >= 2
     let portalA = null, portalB = null;
     if (levelNum >= 2) {
-      portalA = getRandomEmptyCell(board, snake);
+      portalA = getRandomEmptyCell(board, allSnakes);
       if (portalA) {
         board[portalA.y][portalA.x] = CELL.PORTAL_A;
-        portalB = getRandomEmptyCell(board, snake);
+        portalB = getRandomEmptyCell(board, allSnakes);
         if (portalB) board[portalB.y][portalB.x] = CELL.PORTAL_B;
       }
     }
 
-    // Score zones
     const scoreZones = [];
     const numZones = Math.min(levelNum, 4);
     for (let i = 0; i < numZones; i++) {
-      const pos = getRandomEmptyCell(board, snake);
+      const pos = getRandomEmptyCell(board, allSnakes);
       if (pos) {
         board[pos.y][pos.x] = CELL.SCORE_ZONE;
         scoreZones.push(pos);
       }
     }
 
-    // Boss on levels 3, 6
+    // Boss on levels 3, 6 (only in single player)
     let bossSnake = [];
-    let bossActive = false;
-    let bossAlive = false;
-    if (levelNum === 3 || levelNum === 6) {
+    let bossActive = false, bossAlive = false;
+    if (state.mode === 'single' && (levelNum === 3 || levelNum === 6)) {
       const bossHead = { x: 15, y: 2 };
-      bossSnake = [];
       for (let bx = bossHead.x + 5; bx >= bossHead.x; bx--) {
         bossSnake.push({ x: bx, y: bossHead.y });
       }
@@ -254,39 +288,38 @@ export const useGameStore = create((set, get) => ({
     set({
       gameState: 'playing',
       board,
-      snake,
-      prevSnake: snake.map(s => ({ ...s })),
       tickTimestamp: performance.now(),
-      direction: { ...DIR.RIGHT },
-      nextDirection: { ...DIR.RIGHT },
       food: foodPos,
       firePickup: null,
-      hasFire: false,
       portalA, portalB,
-      hasShield: false, shieldHits: 0,
-      hasMagnet: false, magnetTimer: 0,
-      isSlowMo: false, slowMoTimer: 0,
       powerupOnBoard: null,
       scoreZones,
+      players,
       bossSnake,
       prevBossSnake: bossSnake.map(s => ({ ...s })),
       bossDirection: { ...DIR.LEFT },
       bossActive, bossAlive,
-      trail: [],
-      foodEaten: 0,
       particles: [],
       screenShake: 0,
-      showLevelBanner: false,
       risingWalls: [],
       nearMiss: false, nearMissTimer: 0,
+      showLevelBanner: false,
+      winner: null,
     });
   },
 
-  setDirection: (dir) => {
+  setDirection: (playerId, dir) => {
     const state = get();
     if (state.gameState !== 'playing') return;
-    if (state.direction.x + dir.x === 0 && state.direction.y + dir.y === 0) return;
-    set({ nextDirection: { ...dir } });
+    const player = state.players[playerId];
+    if (!player || !player.alive) return;
+    if (player.direction.x + dir.x === 0 && player.direction.y + dir.y === 0) return;
+    set({
+      players: {
+        ...state.players,
+        [playerId]: { ...player, nextDirection: { ...dir } },
+      },
+    });
   },
 
   togglePause: () => {
@@ -295,96 +328,81 @@ export const useGameStore = create((set, get) => ({
     else if (state.gameState === 'paused') set({ gameState: 'playing' });
   },
 
-  shootFire: () => {
+  shootFire: (playerId) => {
     const state = get();
-    if (!state.hasFire || state.gameState !== 'playing') return;
+    if (state.gameState !== 'playing') return;
+    const player = state.players[playerId];
+    if (!player || !player.hasFire || !player.alive) return;
 
-    const head = state.snake[state.snake.length - 1];
-    const dir = state.direction;
+    const head = player.snake[player.snake.length - 1];
+    const dir = player.direction;
     const board = state.board.map(r => [...r]);
     const destroyedWalls = [];
+    const newParticles = [...state.particles];
 
-    let px = head.x + dir.x;
-    let py = head.y + dir.y;
-
+    let px = head.x + dir.x, py = head.y + dir.y;
     while (px >= 0 && px < BOARD_WIDTH && py >= 0 && py < BOARD_HEIGHT) {
       if (board[py][px] === CELL.WALL) {
         board[py][px] = CELL.BLANK;
         destroyedWalls.push({ x: px, y: py });
       } else if (board[py][px] === CELL.FOOD) {
         board[py][px] = CELL.BLANK;
-        const newFood = getRandomEmptyCell(board, state.snake);
+        const allSnakes = getAllSnakes(state.players);
+        const newFood = getRandomEmptyCell(board, allSnakes);
         if (newFood) board[newFood.y][newFood.x] = CELL.FOOD;
-        set(s => ({ score: s.score + LEVEL_INFO[s.level - 1].scorePerFood, food: newFood }));
+        const updatedPlayer = { ...player, score: player.score + LEVEL_INFO[state.level - 1].scorePerFood };
+        set(s => ({
+          food: newFood,
+          players: { ...s.players, [playerId]: { ...s.players[playerId], score: updatedPlayer.score } },
+        }));
       }
+      newParticles.push({ x: px, y: py, type: 'fireBeam', life: 0.8, id: Math.random() });
       px += dir.x;
       py += dir.y;
     }
 
-    const newParticles = destroyedWalls.map(w => ({
-      x: w.x, y: w.y, type: 'explosion', life: 1.0, id: Math.random(),
-    }));
-
-    // Fire trail particles along the beam
-    let tx = head.x + dir.x, ty = head.y + dir.y;
-    while (tx >= 0 && tx < BOARD_WIDTH && ty >= 0 && ty < BOARD_HEIGHT) {
-      newParticles.push({ x: tx, y: ty, type: 'fireBeam', life: 0.8, id: Math.random() });
-      tx += dir.x;
-      ty += dir.y;
-    }
+    destroyedWalls.forEach(w => {
+      newParticles.push({ x: w.x, y: w.y, type: 'explosion', life: 1.0, id: Math.random() });
+    });
 
     set({
-      hasFire: false,
       board,
-      particles: [...state.particles, ...newParticles],
+      particles: newParticles,
       screenShake: 0.5,
+      players: {
+        ...state.players,
+        [playerId]: { ...state.players[playerId], hasFire: false },
+      },
     });
   },
 
-  // Boss AI movement
   moveBoss: () => {
     const state = get();
     if (!state.bossActive || !state.bossAlive || !state.food) return;
-
     const { bossSnake, food, board } = state;
     if (bossSnake.length === 0) return;
 
     const bossHead = bossSnake[bossSnake.length - 1];
-
-    // Simple AI: move toward food, avoid walls
     const possibleDirs = [DIR.UP, DIR.DOWN, DIR.LEFT, DIR.RIGHT];
     let bestDir = state.bossDirection;
     let bestDist = Infinity;
 
     for (const d of possibleDirs) {
-      // Don't reverse
       if (d.x + state.bossDirection.x === 0 && d.y + state.bossDirection.y === 0) continue;
-      const nx = bossHead.x + d.x;
-      const ny = bossHead.y + d.y;
+      const nx = bossHead.x + d.x, ny = bossHead.y + d.y;
       if (nx < 0 || nx >= BOARD_WIDTH || ny < 0 || ny >= BOARD_HEIGHT) continue;
       const cell = board[ny][nx];
-      if (cell === CELL.WALL || cell === 50 || cell === 100) continue;
-      // Check self collision
+      if (cell === CELL.WALL || ALL_SNAKE_CELLS.has(cell)) continue;
       if (bossSnake.some(s => s.x === nx && s.y === ny)) continue;
       const d2 = dist({ x: nx, y: ny }, food);
-      if (d2 < bestDist) {
-        bestDist = d2;
-        bestDir = d;
-      }
+      if (d2 < bestDist) { bestDist = d2; bestDir = d; }
     }
 
     const newBossHead = { x: bossHead.x + bestDir.x, y: bossHead.y + bestDir.y };
-
-    // Check if boss ate food
-    let ateFood = false;
-    if (state.food && newBossHead.x === state.food.x && newBossHead.y === state.food.y) {
-      ateFood = true;
-    }
+    let ateFood = state.food && newBossHead.x === state.food.x && newBossHead.y === state.food.y;
 
     const newBossSnake = [...bossSnake, newBossHead];
-    if (!ateFood) {
-      newBossSnake.shift();
-    }
+    if (!ateFood) newBossSnake.shift();
 
     set({
       prevBossSnake: bossSnake.map(s => ({ ...s })),
@@ -392,312 +410,367 @@ export const useGameStore = create((set, get) => ({
       bossDirection: bestDir,
     });
 
-    // If boss ate food, respawn it
     if (ateFood) {
       const newBoard = state.board.map(r => [...r]);
-      const newFood = getRandomEmptyCell(newBoard, [...state.snake, ...newBossSnake]);
+      const allSnakes = getAllSnakes(state.players);
+      const newFood = getRandomEmptyCell(newBoard, [...allSnakes, newBossSnake]);
       if (newFood) newBoard[newFood.y][newFood.x] = CELL.FOOD;
       set({ board: newBoard, food: newFood });
     }
   },
 
-  tick: () => {
+  // Process one player's movement for a tick
+  tickPlayer: (playerId, board, sharedState) => {
     const state = get();
-    if (state.gameState !== 'playing') return;
+    const player = state.players[playerId];
+    if (!player || !player.alive) return null;
 
-    const { snake, board: oldBoard, level, foodEaten, speed, difficulty } = state;
-    const dir = state.nextDirection;
-    const info = LEVEL_INFO[level - 1];
-    const board = oldBoard.map(r => [...r]);
-
+    const dir = player.nextDirection;
+    const info = LEVEL_INFO[state.level - 1];
+    const { snake } = player;
     const head = snake[snake.length - 1];
-    const newHead = { x: head.x + dir.x, y: head.y + dir.y };
+    let newHead = { x: head.x + dir.x, y: head.y + dir.y };
 
-    // Record for replay
-    if (state.isRecording) {
-      state.replayData.push({
-        snake: snake.map(s => ({ ...s })),
-        dir: { ...dir },
-        score: state.score,
-        level,
-      });
-    }
-
-    // Boundary check
+    // Boundary
     if (newHead.x < 0 || newHead.x >= BOARD_WIDTH || newHead.y < 0 || newHead.y >= BOARD_HEIGHT) {
-      return get().handleDeath();
+      return { died: true, playerId };
     }
 
     let cellVal = board[newHead.y][newHead.x];
 
     // Portal teleportation
     if (cellVal === CELL.PORTAL_A && state.portalB) {
-      newHead.x = state.portalB.x;
-      newHead.y = state.portalB.y;
+      newHead = { x: state.portalB.x, y: state.portalB.y };
       cellVal = CELL.BLANK;
-      set(s => ({ particles: [...s.particles, { x: state.portalA.x, y: state.portalA.y, type: 'portal', life: 1, id: Math.random() }] }));
+      sharedState.particles.push({ x: state.portalA.x, y: state.portalA.y, type: 'portal', life: 1, id: Math.random() });
     } else if (cellVal === CELL.PORTAL_B && state.portalA) {
-      newHead.x = state.portalA.x;
-      newHead.y = state.portalA.y;
+      newHead = { x: state.portalA.x, y: state.portalA.y };
       cellVal = CELL.BLANK;
-      set(s => ({ particles: [...s.particles, { x: state.portalB.x, y: state.portalB.y, type: 'portal', life: 1, id: Math.random() }] }));
+      sharedState.particles.push({ x: state.portalB.x, y: state.portalB.y, type: 'portal', life: 1, id: Math.random() });
     }
 
-    // Hit wall or self
-    if (cellVal === CELL.WALL || cellVal === 50 || cellVal === 100) {
-      if (state.hasShield && state.shieldHits > 0) {
-        // Shield absorbs hit - bounce back
-        const newShieldHits = state.shieldHits - 1;
-        set({
-          hasShield: newShieldHits > 0,
-          shieldHits: newShieldHits,
-          screenShake: 0.3,
-          particles: [...state.particles, { x: head.x, y: head.y, type: 'shieldBreak', life: 1, id: Math.random() }],
-        });
-        return;
+    // Collision with wall or any snake
+    if (cellVal === CELL.WALL || ALL_SNAKE_CELLS.has(cellVal)) {
+      if (player.hasShield && player.shieldHits > 0) {
+        const newHits = player.shieldHits - 1;
+        sharedState.particles.push({ x: head.x, y: head.y, type: 'shieldBreak', life: 1, id: Math.random() });
+        return { shieldUsed: true, playerId, newHits };
       }
-      return get().handleDeath();
+      return { died: true, playerId };
     }
 
-    // Near-miss detection (check adjacent cells for walls/self)
+    // Near-miss detection
     let nearMiss = false;
     for (const d of [DIR.UP, DIR.DOWN, DIR.LEFT, DIR.RIGHT]) {
-      if (d.x === -dir.x && d.y === -dir.y) continue; // skip behind
-      const nx = newHead.x + d.x;
-      const ny = newHead.y + d.y;
+      if (d.x === -dir.x && d.y === -dir.y) continue;
+      const nx = newHead.x + d.x, ny = newHead.y + d.y;
       if (nx >= 0 && nx < BOARD_WIDTH && ny >= 0 && ny < BOARD_HEIGHT) {
         const adj = board[ny][nx];
-        if (adj === CELL.WALL || adj === 50) {
-          nearMiss = true;
-          break;
-        }
+        if (adj === CELL.WALL || ALL_SNAKE_CELLS.has(adj)) { nearMiss = true; break; }
       }
     }
 
-    let ateFood = false;
-    let ateFire = false;
-    let newScore = state.score;
-    let newFoodEaten = foodEaten;
-    let newFood = state.food;
-    let newFirePickup = state.firePickup;
-    let newHasFire = state.hasFire;
-    let newParticles = [...state.particles];
-    let newHasShield = state.hasShield;
-    let newShieldHits = state.shieldHits;
-    let newHasMagnet = state.hasMagnet;
-    let newMagnetTimer = state.magnetTimer;
-    let newIsSlowMo = state.isSlowMo;
-    let newSlowMoTimer = state.slowMoTimer;
-    let newPowerup = state.powerupOnBoard;
-    let newRisingWalls = state.risingWalls;
-    let scoreMultiplier = 1;
+    let ateFood = false, ateFire = false;
+    let scoreAdd = 0;
+    let newFoodEaten = player.foodEaten;
+    let newHasFire = player.hasFire;
+    let newHasShield = player.hasShield;
+    let newShieldHits = player.shieldHits;
+    let newHasMagnet = player.hasMagnet;
+    let newMagnetTimer = player.magnetTimer;
+    let newIsSlowMo = player.isSlowMo;
+    let newSlowMoTimer = player.slowMoTimer;
+    let newScoreMultiplier = player.scoreMultiplier;
+    let growFromZone = false;
 
-    // Check score zone
+    // Score zone: permanently doubles multiplier, but adds length as cost
     if (cellVal === CELL.SCORE_ZONE) {
-      scoreMultiplier = 2;
-      newParticles.push({ x: newHead.x, y: newHead.y, type: 'scoreZone', life: 1, id: Math.random() });
+      newScoreMultiplier *= 2;
+      growFromZone = true;
+      sharedState.particles.push({ x: newHead.x, y: newHead.y, type: 'scoreZone', life: 1, id: Math.random() });
     }
 
-    // Decay powerup timers
-    if (newMagnetTimer > 0) {
-      newMagnetTimer--;
-      if (newMagnetTimer <= 0) newHasMagnet = false;
-    }
-    if (newSlowMoTimer > 0) {
-      newSlowMoTimer--;
-      if (newSlowMoTimer <= 0) newIsSlowMo = false;
-    }
+    const scoreMultiplier = newScoreMultiplier;
 
-    // Magnet effect: if food is within 5 cells, move it 1 step toward head
-    if (newHasMagnet && newFood) {
-      const d = dist(newHead, newFood);
+    // Decay timers
+    if (newMagnetTimer > 0) { newMagnetTimer--; if (newMagnetTimer <= 0) newHasMagnet = false; }
+    if (newSlowMoTimer > 0) { newSlowMoTimer--; if (newSlowMoTimer <= 0) newIsSlowMo = false; }
+
+    // Magnet
+    if (newHasMagnet && sharedState.food) {
+      const d = dist(newHead, sharedState.food);
       if (d <= 6 && d > 1) {
-        const dx = Math.sign(newHead.x - newFood.x);
-        const dy = Math.sign(newHead.y - newFood.y);
-        const targetX = newFood.x + dx;
-        const targetY = newFood.y + dy;
-        if (targetX >= 0 && targetX < BOARD_WIDTH && targetY >= 0 && targetY < BOARD_HEIGHT) {
-          if (board[targetY][targetX] === CELL.BLANK || board[targetY][targetX] === CELL.SCORE_ZONE) {
-            board[newFood.y][newFood.x] = CELL.BLANK;
-            board[targetY][targetX] = CELL.FOOD;
-            newFood = { x: targetX, y: targetY };
+        const dx = Math.sign(newHead.x - sharedState.food.x);
+        const dy = Math.sign(newHead.y - sharedState.food.y);
+        const tx = sharedState.food.x + dx, ty = sharedState.food.y + dy;
+        if (tx >= 0 && tx < BOARD_WIDTH && ty >= 0 && ty < BOARD_HEIGHT) {
+          if (board[ty][tx] === CELL.BLANK || board[ty][tx] === CELL.SCORE_ZONE) {
+            board[sharedState.food.y][sharedState.food.x] = CELL.BLANK;
+            board[ty][tx] = CELL.FOOD;
+            sharedState.food = { x: tx, y: ty };
           }
         }
       }
     }
 
-    // Pick up power-ups
+    // Power-up pickups
     if (cellVal === CELL.SHIELD) {
-      newHasShield = true;
-      newShieldHits = 2;
-      newPowerup = null;
-      newParticles.push({ x: newHead.x, y: newHead.y, type: 'shieldPickup', life: 1, id: Math.random() });
+      newHasShield = true; newShieldHits = 2; sharedState.powerupOnBoard = null;
+      sharedState.particles.push({ x: newHead.x, y: newHead.y, type: 'shieldPickup', life: 1, id: Math.random() });
     }
     if (cellVal === CELL.MAGNET) {
-      newHasMagnet = true;
-      newMagnetTimer = 30; // 30 ticks
-      newPowerup = null;
-      newParticles.push({ x: newHead.x, y: newHead.y, type: 'magnetPickup', life: 1, id: Math.random() });
+      newHasMagnet = true; newMagnetTimer = 30; sharedState.powerupOnBoard = null;
+      sharedState.particles.push({ x: newHead.x, y: newHead.y, type: 'magnetPickup', life: 1, id: Math.random() });
     }
     if (cellVal === CELL.SLOWMO) {
-      newIsSlowMo = true;
-      newSlowMoTimer = 20; // 20 ticks
-      newPowerup = null;
-      newParticles.push({ x: newHead.x, y: newHead.y, type: 'slowmoPickup', life: 1, id: Math.random() });
+      newIsSlowMo = true; newSlowMoTimer = 20; sharedState.powerupOnBoard = null;
+      sharedState.particles.push({ x: newHead.x, y: newHead.y, type: 'slowmoPickup', life: 1, id: Math.random() });
     }
 
     if (cellVal === CELL.FOOD) {
       ateFood = true;
-      newScore += info.scorePerFood * scoreMultiplier;
+      scoreAdd = info.scorePerFood * scoreMultiplier;
       newFoodEaten += 1;
 
       const now = Date.now();
-      const combo = (now - state.lastEatTime < 3000) ? state.comboCount + 1 : 1;
-      if (combo > 1) newScore += combo * 2 * scoreMultiplier;
+      const combo = (now - (sharedState.lastEatTime || 0) < 3000) ? (sharedState.comboCount || 0) + 1 : 1;
+      if (combo > 1) scoreAdd += combo * 2 * scoreMultiplier;
+      sharedState.comboCount = combo;
+      sharedState.lastEatTime = now;
 
-      newParticles.push({
+      sharedState.particles.push({
         x: newHead.x, y: newHead.y, type: 'eat', life: 1.0, id: Math.random(),
         text: scoreMultiplier > 1 ? `x2! +${info.scorePerFood * 2}` : combo > 1 ? `x${combo}!` : `+${info.scorePerFood}`,
       });
 
+      // Check level complete
       if (newFoodEaten >= info.maxFood) {
-        const nextLevel = (level % 6) + 1;
-        const nextSpeed = nextLevel === 1 ? Math.min(speed + 1, 6) : speed;
-        set({
-          gameState: 'levelComplete',
-          score: newScore,
-          foodEaten: newFoodEaten,
-          level: nextLevel,
-          speed: nextSpeed,
-          showLevelBanner: true,
-          particles: newParticles,
-          comboCount: combo,
-          lastEatTime: now,
-        });
-        return;
+        sharedState.levelComplete = true;
+        sharedState.levelCompletePlayerId = playerId;
       }
 
-      const tempBoard = board.map(r => [...r]);
-      tempBoard[newHead.y][newHead.x] = 100;
-      newFood = getRandomEmptyCell(tempBoard, snake);
+      // Respawn food
+      const allSnakes = [];
+      for (const p of Object.values(state.players)) {
+        if (p.alive) allSnakes.push(p.snake);
+      }
+      board[newHead.y][newHead.x] = CELL.BLANK; // clear food before finding new spot
+      const newFood = getRandomEmptyCell(board, allSnakes);
       if (newFood) board[newFood.y][newFood.x] = CELL.FOOD;
+      sharedState.food = newFood;
 
-      // Maybe spawn fire pickup
-      if (newFoodEaten % info.foodToFire === 0 && !state.firePickup && !state.hasFire) {
-        if (difficulty > 0 || level >= 3) {
-          const firePos = getRandomEmptyCell(board, snake);
+      // Maybe spawn fire
+      if (newFoodEaten % info.foodToFire === 0 && !sharedState.firePickup && !player.hasFire) {
+        if (state.difficulty > 0 || state.level >= 3) {
+          const firePos = getRandomEmptyCell(board, allSnakes);
           if (firePos) {
             board[firePos.y][firePos.x] = CELL.FIRE;
-            newFirePickup = firePos;
+            sharedState.firePickup = firePos;
           }
         }
       }
 
       // Maybe spawn power-up
-      if (newFoodEaten % 7 === 0 && !newPowerup) {
+      if (newFoodEaten % 7 === 0 && !sharedState.powerupOnBoard) {
         const types = [CELL.SHIELD, CELL.MAGNET, CELL.SLOWMO];
         const type = types[Math.floor(Math.random() * types.length)];
-        const pos = getRandomEmptyCell(board, snake);
+        const pos = getRandomEmptyCell(board, allSnakes);
         if (pos) {
           board[pos.y][pos.x] = type;
-          newPowerup = { type, pos };
+          sharedState.powerupOnBoard = { type, pos };
         }
       }
 
-      // Random wall with rising animation
-      if (difficulty > 0 && newFoodEaten % 5 === 0) {
-        const wallPos = getRandomEmptyCell(board, snake);
+      // Random wall
+      if (state.difficulty > 0 && newFoodEaten % 5 === 0) {
+        const wallPos = getRandomEmptyCell(board, allSnakes);
         if (wallPos) {
           board[wallPos.y][wallPos.x] = CELL.WALL;
-          newRisingWalls = [...state.risingWalls, { x: wallPos.x, y: wallPos.y, progress: 0, id: Math.random() }];
+          sharedState.risingWalls.push({ x: wallPos.x, y: wallPos.y, progress: 0, id: Math.random() });
         }
       }
-
-      set({ comboCount: combo, lastEatTime: now });
     }
 
     if (cellVal === CELL.FIRE) {
       ateFire = true;
       newHasFire = true;
-      newFirePickup = null;
-      newParticles.push({ x: newHead.x, y: newHead.y, type: 'fire', life: 1.0, id: Math.random() });
+      sharedState.firePickup = null;
+      sharedState.particles.push({ x: newHead.x, y: newHead.y, type: 'fire', life: 1.0, id: Math.random() });
     }
 
     // Move snake
+    const bodyCode = PLAYER_BODY[playerId];
+    const headCode = PLAYER_HEAD[playerId];
     const newSnake = [...snake, newHead];
-    if (!ateFood && !ateFire) {
+    if (!ateFood && !ateFire && !growFromZone) {
       const tail = newSnake.shift();
       board[tail.y][tail.x] = CELL.BLANK;
     }
+    board[head.y][head.x] = bodyCode;
+    board[newHead.y][newHead.x] = headCode;
 
-    board[head.y][head.x] = 50;
-    board[newHead.y][newHead.x] = 100;
-
-    // Update trail
+    // Trail
     const newTrail = [
       { x: head.x, y: head.y, life: 1.0, id: Math.random() },
-      ...state.trail.map(t => ({ ...t, life: t.life - 0.06 })).filter(t => t.life > 0),
+      ...player.trail.map(t => ({ ...t, life: t.life - 0.06 })).filter(t => t.life > 0),
     ];
 
+    return {
+      playerId,
+      died: false,
+      nearMiss,
+      updatedPlayer: {
+        ...player,
+        prevSnake: snake.map(s => ({ ...s })),
+        snake: newSnake,
+        direction: dir,
+        nextDirection: dir,
+        score: player.score + scoreAdd,
+        foodEaten: newFoodEaten,
+        hasFire: newHasFire,
+        hasShield: newHasShield,
+        shieldHits: newShieldHits,
+        hasMagnet: newHasMagnet,
+        magnetTimer: newMagnetTimer,
+        isSlowMo: newIsSlowMo,
+        slowMoTimer: newSlowMoTimer,
+        scoreMultiplier: newScoreMultiplier,
+        trail: newTrail,
+      },
+    };
+  },
+
+  tick: () => {
+    const state = get();
+    if (state.gameState !== 'playing') return;
+
+    const board = state.board.map(r => [...r]);
+    const sharedState = {
+      particles: [...state.particles],
+      food: state.food,
+      firePickup: state.firePickup,
+      powerupOnBoard: state.powerupOnBoard,
+      risingWalls: [...state.risingWalls],
+      comboCount: 0,
+      lastEatTime: 0,
+      levelComplete: false,
+      levelCompletePlayerId: null,
+    };
+
+    const newPlayers = { ...state.players };
+    let anyNearMiss = false;
+    const deadPlayers = [];
+
+    // Process each alive player
+    const playerIds = Object.keys(newPlayers).map(Number);
+    // Shuffle order for fairness
+    for (let i = playerIds.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [playerIds[i], playerIds[j]] = [playerIds[j], playerIds[i]];
+    }
+
+    for (const pid of playerIds) {
+      if (!newPlayers[pid].alive) continue;
+
+      const result = get().tickPlayer(pid, board, sharedState);
+      if (!result) continue;
+
+      if (result.died) {
+        deadPlayers.push(pid);
+        // Clear snake from board
+        for (const seg of newPlayers[pid].snake) {
+          if (board[seg.y] && board[seg.y][seg.x] !== undefined) {
+            const val = board[seg.y][seg.x];
+            if (val === PLAYER_BODY[pid] || val === PLAYER_HEAD[pid]) {
+              board[seg.y][seg.x] = CELL.BLANK;
+            }
+          }
+        }
+        newPlayers[pid] = { ...newPlayers[pid], alive: false };
+        sharedState.particles.push(
+          ...newPlayers[pid].snake.map(s => ({ x: s.x, y: s.y, type: 'explosion', life: 1, id: Math.random() }))
+        );
+      } else if (result.shieldUsed) {
+        newPlayers[pid] = {
+          ...newPlayers[pid],
+          hasShield: result.newHits > 0,
+          shieldHits: result.newHits,
+        };
+      } else {
+        newPlayers[pid] = result.updatedPlayer;
+        if (result.nearMiss) anyNearMiss = true;
+      }
+    }
+
+    // Check level complete
+    if (sharedState.levelComplete) {
+      const nextLevel = (state.level % 6) + 1;
+      const nextSpeed = nextLevel === 1 ? Math.min(state.speed + 1, 6) : state.speed;
+      set({
+        gameState: 'levelComplete',
+        players: newPlayers,
+        level: nextLevel,
+        speed: nextSpeed,
+        showLevelBanner: true,
+        particles: sharedState.particles,
+        board,
+      });
+      return;
+    }
+
+    // Check game over
+    const alivePlayers = Object.entries(newPlayers).filter(([_, p]) => p.alive);
+    if (alivePlayers.length === 0) {
+      // All dead
+      return get().handleGameOver(newPlayers);
+    }
+    if (state.mode === 'versus' && deadPlayers.length > 0 && alivePlayers.length <= 1) {
+      // In versus, when only 1 left, they win
+      const winnerId = alivePlayers.length === 1 ? Number(alivePlayers[0][0]) : null;
+      return get().handleGameOver(newPlayers, winnerId);
+    }
+
     // Decay particles
-    newParticles = newParticles
+    sharedState.particles = sharedState.particles
       .map(p => ({ ...p, life: p.life - 0.05 }))
       .filter(p => p.life > 0);
 
     // Update rising walls
-    newRisingWalls = newRisingWalls
+    sharedState.risingWalls = sharedState.risingWalls
       .map(w => ({ ...w, progress: Math.min(1, w.progress + 0.1) }))
       .filter(w => w.progress < 1);
 
     const newShake = Math.max(0, state.screenShake - 0.1);
 
-    // Move boss
+    // Boss
     if (state.bossActive && state.bossAlive) {
       get().moveBoss();
     }
 
     set({
-      prevSnake: snake.map(s => ({ ...s })),
+      players: newPlayers,
       tickTimestamp: performance.now(),
-      snake: newSnake,
       board,
-      direction: dir,
-      nextDirection: dir,
-      score: newScore,
-      foodEaten: newFoodEaten,
-      food: newFood,
-      firePickup: newFirePickup,
-      hasFire: newHasFire,
-      hasShield: newHasShield,
-      shieldHits: newShieldHits,
-      hasMagnet: newHasMagnet,
-      magnetTimer: newMagnetTimer,
-      isSlowMo: newIsSlowMo,
-      slowMoTimer: newSlowMoTimer,
-      powerupOnBoard: newPowerup,
-      trail: newTrail,
-      particles: newParticles,
-      screenShake: newShake,
-      risingWalls: newRisingWalls,
-      nearMiss,
-      nearMissTimer: nearMiss ? 15 : Math.max(0, state.nearMissTimer - 1),
+      food: sharedState.food,
+      firePickup: sharedState.firePickup,
+      powerupOnBoard: sharedState.powerupOnBoard,
+      particles: sharedState.particles,
+      screenShake: deadPlayers.length > 0 ? 1.0 : newShake,
+      risingWalls: sharedState.risingWalls,
+      nearMiss: anyNearMiss,
+      nearMissTimer: anyNearMiss ? 15 : Math.max(0, state.nearMissTimer - 1),
     });
   },
 
-  handleDeath: () => {
+  handleGameOver: (players, winnerId = null) => {
     const state = get();
-    const hs = Math.max(state.score, state.highScore);
+    // Best score from all players
+    const scores = Object.values(players).map(p => p.score);
+    const bestScore = Math.max(...scores);
+    const hs = Math.max(bestScore, state.highScore);
     localStorage.setItem('snakeHighScore', hs.toString());
 
-    // Save replay if best score
-    if (state.score >= state.highScore && state.replayData.length > 0) {
-      const replay = state.replayData.slice(-500); // last 500 ticks
-      localStorage.setItem('snakeBestReplay', JSON.stringify(replay));
-      set({ bestReplay: replay });
-    }
-
-    // Update leaderboard
-    const lb = [...state.leaderboard, { score: state.score, level: state.level, date: Date.now() }]
+    const lb = [...state.leaderboard, { score: bestScore, level: state.level, date: Date.now() }]
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
     localStorage.setItem('snakeLeaderboard', JSON.stringify(lb));
@@ -708,26 +781,18 @@ export const useGameStore = create((set, get) => ({
       screenShake: 1.0,
       leaderboard: lb,
       isRecording: false,
+      players,
+      winner: winnerId,
     });
-  },
-
-  saveLeaderboardEntry: (name) => {
-    const state = get();
-    const lb = state.leaderboard.map((entry, i) => {
-      if (i === 0 && !entry.name && entry.score === state.score) {
-        return { ...entry, name };
-      }
-      return entry;
-    });
-    localStorage.setItem('snakeLeaderboard', JSON.stringify(lb));
-    set({ leaderboard: lb });
   },
 
   getTickRate: () => {
     const state = get();
     const base = SPEED_LEVELS[state.speed - 1] || 300;
-    if (state.isSlowMo) return base * 1.8; // Slow-mo makes game 1.8x slower
-    if (state.nearMissTimer > 0) return base * 1.3; // slight slow near walls
+    // If any alive player has slow-mo, slow the game
+    const anySlowMo = Object.values(state.players).some(p => p.alive && p.isSlowMo);
+    if (anySlowMo) return base * 1.8;
+    if (state.nearMissTimer > 0) return base * 1.3;
     return base;
   },
 
