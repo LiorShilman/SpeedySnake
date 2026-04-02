@@ -562,13 +562,13 @@
 
 /* ===== ONLINE LOBBY ===== */
 .room-code-input {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 20px;
+  font-family: 'Courier New', monospace;
+  font-size: 24px;
   font-weight: 700;
   text-align: center;
-  width: 120px;
-  padding: 10px 15px;
-  letter-spacing: 6px;
+  width: 200px;
+  padding: 10px 12px;
+  letter-spacing: 8px;
   color: #fff;
   background: rgba(20, 20, 50, 0.8);
   border: 1px solid rgba(100, 100, 255, 0.3);

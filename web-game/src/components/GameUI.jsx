@@ -15,7 +15,7 @@ import {
 // ===== ONLINE LOBBY =====
 function OnlineLobby() {
   const [joinCode, setJoinCode] = useState('');
-  const [view, setView] = useState('choose'); // 'choose' | 'create' | 'join'
+  const [connecting, setConnecting] = useState(false);
   const roomCode = useGameStore(s => s.roomCode);
   const lobbyStatus = useGameStore(s => s.lobbyStatus);
   const opponentConnected = useGameStore(s => s.opponentConnected);
@@ -23,18 +23,18 @@ function OnlineLobby() {
   const myPlayerId = useGameStore(s => s.myPlayerId);
   const returnToMenu = useGameStore(s => s.returnToMenu);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    setConnecting(true);
     const state = useGameStore.getState();
-    connectToServer();
-    createRoom(state.speed, state.difficulty);
-    setView('create');
+    await createRoom(state.speed, state.difficulty);
+    setConnecting(false);
   };
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (!joinCode.trim()) return;
-    connectToServer();
-    joinRoom(joinCode);
-    setView('join');
+    setConnecting(true);
+    await joinRoom(joinCode);
+    setConnecting(false);
   };
 
   const handleStart = () => {
@@ -58,7 +58,11 @@ function OnlineLobby() {
           <div style={{ color: '#ff4444', marginBottom: 15, fontWeight: 'bold' }}>{onlineError}</div>
         )}
 
-        {!roomCode && view === 'choose' && (
+        {connecting && (
+          <div style={{ color: '#ffaa00', marginTop: 20 }}>Connecting...</div>
+        )}
+
+        {!roomCode && !lobbyStatus && !connecting && (
           <>
             <button className="start-btn" onClick={handleCreate}>CREATE GAME</button>
             <div style={{ margin: '20px 0', color: '#888', letterSpacing: 2 }}>OR</div>
@@ -81,7 +85,7 @@ function OnlineLobby() {
           <>
             <div className="room-code-display">
               <div style={{ color: '#888', fontSize: 14, letterSpacing: 2 }}>ROOM CODE</div>
-              <div style={{ fontSize: 48, fontFamily: "'Orbitron', sans-serif", fontWeight: 900, color: '#44ff88', letterSpacing: 8 }}>
+              <div style={{ fontSize: 48, fontFamily: "'Courier New', monospace", fontWeight: 900, color: '#44ff88', letterSpacing: 12 }}>
                 {roomCode}
               </div>
               <div style={{ color: '#666', fontSize: 12, marginTop: 5 }}>Share this code with your friend</div>
@@ -141,7 +145,7 @@ function MainMenu() {
     setMode(selectedMode);
     if (selectedMode === 'online') {
       // Go to lobby instead of starting game
-      useGameStore.setState({ gameState: 'lobby', mode: 'online' });
+      useGameStore.setState({ gameState: 'lobby', mode: 'online', roomCode: null, lobbyStatus: null, opponentConnected: false });
       return;
     }
     startGame();
@@ -541,6 +545,9 @@ export default function GameUI() {
 
   // Keyboard input
   const handleKeyDown = useCallback((e) => {
+    // Don't intercept keys when typing in an input field
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
     const isOnline = useGameStore.getState().mode === 'online';
 
     if (isOnline) {

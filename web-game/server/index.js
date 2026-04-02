@@ -11,9 +11,10 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: '*', // dev: allow all; tighten in production
+    origin: '*',
     methods: ['GET', 'POST'],
   },
+  path: '/SpeedySnake/socket.io',
 });
 
 // Serve static build in production
@@ -26,7 +27,7 @@ app.get('*', (req, res) => {
 const rooms = new Map();
 
 function generateRoomCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I,O,0,1 for readability
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ234568'; // no I,O,0,1,7,9 for readability
   let code;
   do {
     code = '';
@@ -136,7 +137,7 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 28500;
 httpServer.listen(PORT, () => {
   console.log(`Speedy Snake server running on port ${PORT}`);
 });

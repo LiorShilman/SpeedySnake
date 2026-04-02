@@ -4,10 +4,11 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  base: '/SpeedySnake/',
   server: {
     proxy: {
-      '/socket.io': {
-        target: 'http://localhost:3001',
+      '/SpeedySnake/socket.io': {
+        target: 'http://localhost:28500',
         ws: true,
       },
     },
