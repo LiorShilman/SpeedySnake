@@ -1,7 +1,7 @@
 // Pure game logic extracted from gameStore.js - runs on the server
 // No Zustand, no browser APIs - just pure functions
 
-import { LEVELS, LEVEL_INFO, BOARD_WIDTH, BOARD_HEIGHT, SPEED_LEVELS } from '../src/data/levels.js';
+import { LEVELS, LEVEL_INFO, BOARD_WIDTH, BOARD_HEIGHT, SPEED_LEVELS } from './levels.js';
 
 const CELL = {
   BLANK: 0, WALL: 1, FOOD: 9, FIRE: 5,

@@ -2,10 +2,12 @@
 // 0 = blank, 1 = wall, 6 = snake spawn zone (treated as blank)
 // Board: 32 columns x 22 rows
 
+import type { LevelInfo } from '../types';
+
 export const BOARD_WIDTH = 32;
 export const BOARD_HEIGHT = 22;
 
-export const LEVEL_INFO = [
+export const LEVEL_INFO: LevelInfo[] = [
   { level: 1, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 30, scorePerFood: 2, foodToFire: 10,
     p2head: { x: 15, y: 2 }, p2tail: { x: 22, y: 2 }, p2direction: { x: -1, y: 0 } },
   { level: 2, head: { x: 16, y: 19 }, tail: { x: 9, y: 19 }, direction: { x: 1, y: 0 }, maxFood: 25, scorePerFood: 3, foodToFire: 10,

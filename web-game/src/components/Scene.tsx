@@ -10,13 +10,12 @@ import { BOARD_WIDTH, BOARD_HEIGHT } from '../data/levels';
 const BOARD_OFFSET_X = -BOARD_WIDTH / 2;
 const BOARD_OFFSET_Z = -BOARD_HEIGHT / 2;
 
-function toWorld(x, y) {
+function toWorld(x: number, y: number): [number, number, number] {
   return [x + BOARD_OFFSET_X + 0.5, 0, y + BOARD_OFFSET_Z + 0.5];
 }
 
-// Dynamic camera that follows snake head in single, centers board in versus
 function DynamicCamera() {
-  const controlsRef = useRef();
+  const controlsRef = useRef<any>(null);
   const targetPos = useRef(new THREE.Vector3(0, 0, 0));
 
   useFrame(() => {
@@ -26,10 +25,8 @@ function DynamicCamera() {
 
     if (gameState === 'playing') {
       if (mode === 'versus') {
-        // In versus mode, keep camera centered on the board
         targetPos.current.lerp(new THREE.Vector3(0, 0, 0), 0.05);
       } else {
-        // Single player: follow P1 head
         const p1 = players[0];
         if (p1 && p1.alive && p1.snake.length > 0) {
           const head = p1.snake[p1.snake.length - 1];
@@ -59,11 +56,10 @@ function DynamicCamera() {
   );
 }
 
-// Level-themed lights that change color per level
 function LevelLights() {
-  const lightRef1 = useRef();
-  const lightRef2 = useRef();
-  const lightRef3 = useRef();
+  const lightRef1 = useRef<THREE.PointLight>(null);
+  const lightRef2 = useRef<THREE.PointLight>(null);
+  const lightRef3 = useRef<THREE.PointLight>(null);
 
   useFrame(() => {
     const state = useGameStore.getState();
@@ -75,7 +71,6 @@ function LevelLights() {
       lightRef2.current.color.lerp(new THREE.Color(theme.secondary), 0.02);
     }
     if (lightRef3.current) {
-      // Near-miss slow-mo visual: pulse the light
       const intensity = state.nearMissTimer > 0 ? 1.5 : 0.5;
       lightRef3.current.intensity += (intensity - lightRef3.current.intensity) * 0.1;
     }
@@ -90,7 +85,6 @@ function LevelLights() {
   );
 }
 
-// Inner scene content (uses useFrame which requires Canvas context)
 function SceneContent() {
   return (
     <>

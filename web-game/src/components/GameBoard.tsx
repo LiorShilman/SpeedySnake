@@ -3,23 +3,24 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { BOARD_WIDTH, BOARD_HEIGHT, SPEED_LEVELS } from '../data/levels';
 import { useGameStore, CELL, LEVEL_THEMES, PLAYER_HUES } from '../store/gameStore';
+import type { Point, Player, Particle, RisingWall, Powerup } from '../types';
 
 const CELL_SIZE = 1;
 const WALL_HEIGHT = 1.2;
 const BOARD_OFFSET_X = -BOARD_WIDTH / 2;
 const BOARD_OFFSET_Z = -BOARD_HEIGHT / 2;
 
-function toWorld(x, y) {
+function toWorld(x: number, y: number): [number, number, number] {
   return [x * CELL_SIZE + BOARD_OFFSET_X + 0.5, 0, y * CELL_SIZE + BOARD_OFFSET_Z + 0.5];
 }
 
 // ===== WALLS =====
-function Walls({ board, level }) {
+function Walls({ board, level }: { board: number[][]; level: number }) {
   const theme = LEVEL_THEMES[(level - 1) % 6];
 
   const wallPositions = useMemo(() => {
     if (!board) return [];
-    const positions = [];
+    const positions: { x: number; y: number; wx: [number, number, number] }[] = [];
     for (let y = 0; y < BOARD_HEIGHT; y++) {
       for (let x = 0; x < BOARD_WIDTH; x++) {
         if (board[y][x] === 1) {
@@ -67,7 +68,7 @@ function Walls({ board, level }) {
 }
 
 // ===== RISING WALLS (animated) =====
-function RisingWalls({ risingWalls, level }) {
+function RisingWalls({ risingWalls, level }: { risingWalls: RisingWall[]; level: number }) {
   const theme = LEVEL_THEMES[(level - 1) % 6];
   return (
     <group>
@@ -92,7 +93,7 @@ function RisingWalls({ risingWalls, level }) {
 }
 
 // ===== NEON TRAIL =====
-function Trail({ trail, level }) {
+function Trail({ trail, level }: { trail: { x: number; y: number; life: number; id: number }[]; level: number }) {
   const theme = LEVEL_THEMES[(level - 1) % 6];
   return (
     <group>
@@ -116,8 +117,19 @@ function Trail({ trail, level }) {
 }
 
 // ===== SNAKE SEGMENT (multiplayer-aware) =====
-function SnakeSegment({ index, snakeLength, direction, hasFire, hasShield, level, playerId, colorHue }) {
-  const groupRef = useRef();
+interface SnakeSegmentProps {
+  index: number;
+  snakeLength: number;
+  direction: Point;
+  hasFire: boolean;
+  hasShield: boolean;
+  level: number;
+  playerId: number;
+  colorHue: number;
+}
+
+function SnakeSegment({ index, snakeLength, direction, hasFire, hasShield, level, playerId, colorHue }: SnakeSegmentProps) {
+  const groupRef = useRef<THREE.Group>(null);
   const time = useRef(0);
   const isHead = index === snakeLength - 1;
   const isTail = index === 0;
@@ -209,7 +221,7 @@ function SnakeSegment({ index, snakeLength, direction, hasFire, hasShield, level
   );
 }
 
-function PlayerSnake({ playerId, player, level }) {
+function PlayerSnake({ playerId, player, level }: { playerId: number; player: Player; level: number }) {
   if (!player || !player.alive || !player.snake || player.snake.length === 0) return null;
   return (
     <group>
@@ -231,8 +243,8 @@ function PlayerSnake({ playerId, player, level }) {
 }
 
 // ===== BOSS SNAKE =====
-function BossSnakeSegment({ index, bossSnake, bossDirection }) {
-  const groupRef = useRef();
+function BossSnakeSegment({ index, bossSnake, bossDirection }: { index: number; bossSnake: Point[]; bossDirection: Point }) {
+  const groupRef = useRef<THREE.Group>(null);
   const isHead = index === bossSnake.length - 1;
   const t = index / bossSnake.length;
   const scale = isHead ? 1.2 : 0.6 + t * 0.3;
@@ -287,7 +299,7 @@ function BossSnakeSegment({ index, bossSnake, bossDirection }) {
   );
 }
 
-function BossSnake({ bossSnake, bossDirection, bossActive, bossAlive }) {
+function BossSnake({ bossSnake, bossDirection, bossActive, bossAlive }: { bossSnake: Point[]; bossDirection: Point; bossActive: boolean; bossAlive: boolean }) {
   if (!bossActive || !bossAlive || bossSnake.length === 0) return null;
   return (
     <group>
@@ -299,9 +311,9 @@ function BossSnake({ bossSnake, bossDirection, bossActive, bossAlive }) {
 }
 
 // ===== FOOD =====
-function Food({ position }) {
-  const meshRef = useRef();
-  const glowRef = useRef();
+function Food({ position }: { position: Point | null }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
     if (!meshRef.current) return;
@@ -329,8 +341,8 @@ function Food({ position }) {
 }
 
 // ===== FIRE PICKUP =====
-function FirePickup({ position }) {
-  const meshRef = useRef();
+function FirePickup({ position }: { position: Point | null }) {
+  const meshRef = useRef<THREE.Mesh>(null);
   useFrame((state) => {
     if (!meshRef.current) return;
     meshRef.current.rotation.y = state.clock.elapsedTime * 4;
@@ -353,9 +365,9 @@ function FirePickup({ position }) {
 }
 
 // ===== PORTALS =====
-function Portal({ position, color, label }) {
-  const meshRef = useRef();
-  const ringRef = useRef();
+function Portal({ position, color }: { position: Point | null; color: string; label?: string }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
     if (meshRef.current) {
@@ -387,8 +399,8 @@ function Portal({ position, color, label }) {
 }
 
 // ===== POWER-UP ON BOARD =====
-function PowerupPickup({ powerup }) {
-  const meshRef = useRef();
+function PowerupPickup({ powerup }: { powerup: Powerup | null }) {
+  const meshRef = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
     if (!meshRef.current) return;
@@ -399,7 +411,7 @@ function PowerupPickup({ powerup }) {
   if (!powerup) return null;
   const [wx, , wz] = toWorld(powerup.pos.x, powerup.pos.y);
 
-  const configs = {
+  const configs: Record<number, { color: string; emissive: string; shape: string }> = {
     [CELL.SHIELD]: { color: '#00aaff', emissive: '#0088ff', shape: 'octahedron' },
     [CELL.MAGNET]: { color: '#ff00ff', emissive: '#cc00cc', shape: 'torus' },
     [CELL.SLOWMO]: { color: '#00ffaa', emissive: '#00cc88', shape: 'icosahedron' },
@@ -421,7 +433,7 @@ function PowerupPickup({ powerup }) {
 }
 
 // ===== SCORE ZONES =====
-function ScoreZones({ scoreZones }) {
+function ScoreZones({ scoreZones }: { scoreZones: Point[] }) {
   const time = useRef(0);
   useFrame((_, delta) => { time.current += delta; });
 
@@ -449,7 +461,7 @@ function ScoreZones({ scoreZones }) {
 }
 
 // ===== PARTICLES =====
-function Particles({ particles }) {
+function Particles({ particles }: { particles: Particle[] }) {
   return (
     <group>
       {particles.map((p) => {
@@ -516,7 +528,7 @@ function Particles({ particles }) {
 }
 
 // ===== GROUND =====
-function Ground({ level }) {
+function Ground({ level }: { level: number }) {
   const theme = LEVEL_THEMES[(level - 1) % 6];
   return (
     <group>
@@ -534,7 +546,7 @@ function Ground({ level }) {
 
 // ===== MAIN GAMEBOARD =====
 export default function GameBoard() {
-  const groupRef = useRef();
+  const groupRef = useRef<THREE.Group>(null);
   const board = useGameStore(s => s.board);
   const players = useGameStore(s => s.players);
   const food = useGameStore(s => s.food);
@@ -552,9 +564,8 @@ export default function GameBoard() {
   const bossActive = useGameStore(s => s.bossActive);
   const bossAlive = useGameStore(s => s.bossAlive);
 
-  // Gather all trails from all players
   const allTrails = useMemo(() => {
-    const trails = [];
+    const trails: { x: number; y: number; life: number; id: number }[] = [];
     for (const p of Object.values(players)) {
       if (p.trail) trails.push(...p.trail);
     }
@@ -582,7 +593,6 @@ export default function GameBoard() {
       <Walls board={board} level={currentLevel} />
       <RisingWalls risingWalls={risingWalls} level={currentLevel} />
 
-      {/* Render each player's snake */}
       {Object.entries(players).map(([id, player]) => (
         <PlayerSnake key={id} playerId={Number(id)} player={player} level={currentLevel} />
       ))}

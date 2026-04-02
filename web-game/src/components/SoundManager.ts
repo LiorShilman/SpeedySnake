@@ -1,7 +1,7 @@
 // Web Audio API sound effects + procedural background music
-const audioCtx = typeof window !== 'undefined' ? new (window.AudioContext || window.webkitAudioContext)() : null;
+const audioCtx = typeof window !== 'undefined' ? new (window.AudioContext || (window as any).webkitAudioContext)() : null;
 
-function playTone(freq, duration, type = 'square', volume = 0.15) {
+function playTone(freq: number, duration: number, type: OscillatorType = 'square', volume = 0.15) {
   if (!audioCtx) return;
   if (audioCtx.state === 'suspended') audioCtx.resume();
   const osc = audioCtx.createOscillator();
@@ -66,7 +66,7 @@ export function playMenuSound() {
   playTone(440, 0.08, 'sine', 0.08);
 }
 
-export function playComboSound(combo) {
+export function playComboSound(combo: number) {
   const base = 600 + combo * 100;
   playTone(base, 0.12, 'sine', 0.1);
   setTimeout(() => playTone(base * 1.5, 0.15, 'sine', 0.08), 60);
@@ -91,19 +91,17 @@ export function playPowerupSound() {
 }
 
 // ===== PROCEDURAL BACKGROUND MUSIC =====
-// Generates an evolving bass + arpeggio pattern that changes with speed/level
-
-const SCALES = {
-  1: [130.81, 146.83, 164.81, 174.61, 196.00, 220.00, 246.94], // C minor
-  2: [146.83, 164.81, 174.61, 196.00, 220.00, 246.94, 261.63], // D minor
-  3: [164.81, 185.00, 196.00, 220.00, 246.94, 261.63, 293.66], // E minor
-  4: [174.61, 196.00, 220.00, 233.08, 261.63, 293.66, 329.63], // F minor
-  5: [196.00, 220.00, 246.94, 261.63, 293.66, 329.63, 349.23], // G minor
-  6: [220.00, 246.94, 261.63, 293.66, 329.63, 349.23, 392.00], // A minor
+const SCALES: Record<number, number[]> = {
+  1: [130.81, 146.83, 164.81, 174.61, 196.00, 220.00, 246.94],
+  2: [146.83, 164.81, 174.61, 196.00, 220.00, 246.94, 261.63],
+  3: [164.81, 185.00, 196.00, 220.00, 246.94, 261.63, 293.66],
+  4: [174.61, 196.00, 220.00, 233.08, 261.63, 293.66, 329.63],
+  5: [196.00, 220.00, 246.94, 261.63, 293.66, 329.63, 349.23],
+  6: [220.00, 246.94, 261.63, 293.66, 329.63, 349.23, 392.00],
 };
 
-let musicInterval = null;
-let musicGain = null;
+let musicInterval: ReturnType<typeof setInterval> | null = null;
+let musicGain: GainNode | null = null;
 let musicStep = 0;
 
 export function startMusic(level = 1, speed = 1) {
@@ -116,8 +114,8 @@ export function startMusic(level = 1, speed = 1) {
   musicGain.connect(audioCtx.destination);
 
   const scale = SCALES[level] || SCALES[1];
-  const bpm = 100 + speed * 20; // faster speed = faster music
-  const interval = (60 / bpm) * 1000 / 2; // 8th notes
+  const bpm = 100 + speed * 20;
+  const interval = (60 / bpm) * 1000 / 2;
 
   musicStep = 0;
 
@@ -127,7 +125,6 @@ export function startMusic(level = 1, speed = 1) {
     const step = musicStep % 16;
     musicStep++;
 
-    // Bass on beats 0, 4, 8, 12
     if (step % 4 === 0) {
       const bassNote = scale[0] / 2;
       const osc = audioCtx.createOscillator();
@@ -137,12 +134,11 @@ export function startMusic(level = 1, speed = 1) {
       g.gain.setValueAtTime(0.08, audioCtx.currentTime);
       g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
       osc.connect(g);
-      g.connect(musicGain);
+      g.connect(musicGain!);
       osc.start();
       osc.stop(audioCtx.currentTime + 0.3);
     }
 
-    // Arpeggio pattern
     const noteIdx = [0, 2, 4, 2, 3, 5, 4, 1][step % 8];
     const freq = scale[noteIdx];
 
@@ -153,11 +149,10 @@ export function startMusic(level = 1, speed = 1) {
     g.gain.setValueAtTime(0.04, audioCtx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
     osc.connect(g);
-    g.connect(musicGain);
+    g.connect(musicGain!);
     osc.start();
     osc.stop(audioCtx.currentTime + 0.15);
 
-    // Hi-hat on every other step
     if (step % 2 === 1) {
       const bufferSize = audioCtx.sampleRate * 0.03;
       const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
@@ -170,13 +165,12 @@ export function startMusic(level = 1, speed = 1) {
       const hg = audioCtx.createGain();
       hg.gain.setValueAtTime(0.02, audioCtx.currentTime);
       hg.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.03);
-      // High-pass filter for hi-hat
       const filter = audioCtx.createBiquadFilter();
       filter.type = 'highpass';
       filter.frequency.setValueAtTime(8000, audioCtx.currentTime);
       src.connect(filter);
       filter.connect(hg);
-      hg.connect(musicGain);
+      hg.connect(musicGain!);
       src.start();
     }
   }, interval);
@@ -188,14 +182,13 @@ export function stopMusic() {
     musicInterval = null;
   }
   if (musicGain) {
-    try { musicGain.disconnect(); } catch (e) {}
+    try { musicGain.disconnect(); } catch (_) {}
     musicGain = null;
   }
 }
 
-export function updateMusicTempo(speed) {
-  // Will be called when speed changes to restart music with new tempo
-  const state = typeof window !== 'undefined' && window.__gameLevel;
+export function updateMusicTempo(speed: number) {
+  const state = typeof window !== 'undefined' && (window as any).__gameLevel;
   if (musicInterval) {
     startMusic(state || 1, speed);
   }

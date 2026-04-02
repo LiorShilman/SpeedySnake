@@ -11,6 +11,7 @@ import {
   connectToServer, createRoom, joinRoom, sendInput,
   sendStartGame, sendPlayAgain, disconnectFromServer,
 } from '../store/socketManager';
+import type { GameMode } from '../types';
 
 // ===== ONLINE LOBBY =====
 function OnlineLobby() {
@@ -129,7 +130,7 @@ function OnlineLobby() {
 function MainMenu() {
   const [selectedSpeed, setSelectedSpeed] = useState(1);
   const [selectedDifficulty, setSelectedDifficulty] = useState(0);
-  const [selectedMode, setSelectedMode] = useState('single');
+  const [selectedMode, setSelectedMode] = useState<GameMode>('single');
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const startGame = useGameStore(s => s.startGame);
   const setDifficulty = useGameStore(s => s.setDifficulty);
@@ -144,7 +145,6 @@ function MainMenu() {
     setSpeed(selectedSpeed);
     setMode(selectedMode);
     if (selectedMode === 'online') {
-      // Go to lobby instead of starting game
       useGameStore.setState({ gameState: 'lobby', mode: 'online', roomCode: null, lobbyStatus: null, opponentConnected: false });
       return;
     }
@@ -152,7 +152,7 @@ function MainMenu() {
   };
 
   const difficulties = ['Beginner', 'Intermediate', 'Expert'];
-  const modes = [
+  const modes: { key: GameMode; label: string }[] = [
     { key: 'single', label: 'SOLO' },
     { key: 'versus', label: '2P LOCAL' },
     { key: 'online', label: 'ONLINE' },
@@ -281,7 +281,6 @@ function HUD() {
   const p1Score = p1 ? p1.score : 0;
   const p1FoodRemaining = p1 && currentLevelInfo ? currentLevelInfo.maxFood - p1.foodEaten : 0;
 
-  // In online mode, show "YOU" for own player
   const p1Label = mode === 'online' ? (myPlayerId === 0 ? 'YOU' : 'OPP') : (isMulti ? 'P1' : 'SCORE');
   const p2Label = mode === 'online' ? (myPlayerId === 1 ? 'YOU' : 'OPP') : 'P2';
 
@@ -385,8 +384,7 @@ function GameOverOverlay() {
     returnToMenu();
   };
 
-  // In online mode, show "YOU WIN" / "YOU LOSE"
-  let winnerText = null;
+  let winnerText: string | null = null;
   if (isMulti && winner !== null) {
     if (mode === 'online') {
       winnerText = winner === myPlayerId ? 'YOU WIN!' : 'YOU LOSE!';
@@ -446,7 +444,6 @@ function LevelCompleteOverlay() {
 
   useEffect(() => {
     playLevelUpSound();
-    // Only auto-start locally for non-online modes
     if (mode !== 'online') {
       const timer = setTimeout(() => {
         startLevel(level);
@@ -485,14 +482,13 @@ export default function GameUI() {
   const level = useGameStore(s => s.level);
   const speed = useGameStore(s => s.speed);
 
-  // Sound effects based on state changes
   useEffect(() => {
     const unsubscribe = useGameStore.subscribe((state, prevState) => {
       const currPlayers = state.players;
       const prevPlayers = prevState.players;
       for (const pid of Object.keys(currPlayers)) {
-        const cp = currPlayers[pid];
-        const pp = prevPlayers[pid];
+        const cp = currPlayers[Number(pid)];
+        const pp = prevPlayers[Number(pid)];
         if (!pp) continue;
         if (cp.foodEaten > pp.foodEaten) playEatSound();
         if (cp.hasFire && !pp.hasFire) playFirePickupSound();
@@ -513,7 +509,6 @@ export default function GameUI() {
     return unsubscribe;
   }, []);
 
-  // Music control
   useEffect(() => {
     if (gameState === 'playing') {
       startMusic(level, speed);
@@ -523,7 +518,6 @@ export default function GameUI() {
     return () => stopMusic();
   }, [gameState, level, speed]);
 
-  // Game loop - only for local modes (not online)
   const tickRef = useRef(tick);
   const getTickRateRef = useRef(getTickRate);
   useEffect(() => {
@@ -532,9 +526,8 @@ export default function GameUI() {
   }, [tick, getTickRate]);
 
   useEffect(() => {
-    // In online mode, server drives the tick
     if (gameState !== 'playing' || mode === 'online') return;
-    let timerId;
+    let timerId: ReturnType<typeof setTimeout>;
     const loop = () => {
       tickRef.current();
       timerId = setTimeout(loop, getTickRateRef.current());
@@ -543,15 +536,13 @@ export default function GameUI() {
     return () => clearTimeout(timerId);
   }, [gameState, mode]);
 
-  // Keyboard input
-  const handleKeyDown = useCallback((e) => {
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Don't intercept keys when typing in an input field
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
 
     const isOnline = useGameStore.getState().mode === 'online';
 
     if (isOnline) {
-      // Online: send inputs to server, arrows/WASD both control own snake
       switch (e.key) {
         case 'ArrowUp': case 'w': case 'W':
           e.preventDefault(); sendInput({ type: 'direction', dir: { x: 0, y: -1 } }); break;
@@ -564,10 +555,9 @@ export default function GameUI() {
         case 'Control': case 'Shift':
           e.preventDefault(); sendInput({ type: 'fire' }); break;
         case ' ':
-          e.preventDefault(); break; // No pause in online
+          e.preventDefault(); break;
       }
     } else {
-      // Local: P1=arrows+Ctrl, P2=WASD+Shift
       switch (e.key) {
         case 'ArrowUp':
           e.preventDefault(); setDirection(0, { x: 0, y: -1 }); break;
@@ -600,8 +590,7 @@ export default function GameUI() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  // Touch control handler for online
-  const touchDir = (dir) => {
+  const touchDir = (dir: { x: number; y: number }) => {
     if (mode === 'online') {
       sendInput({ type: 'direction', dir });
     } else {
