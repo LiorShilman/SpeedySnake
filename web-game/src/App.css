@@ -560,6 +560,42 @@
   letter-spacing: 2px;
 }
 
+/* ===== ONLINE LOBBY ===== */
+.room-code-input {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  width: 120px;
+  padding: 10px 15px;
+  letter-spacing: 6px;
+  color: #fff;
+  background: rgba(20, 20, 50, 0.8);
+  border: 1px solid rgba(100, 100, 255, 0.3);
+  border-radius: 8px;
+  outline: none;
+  text-transform: uppercase;
+}
+
+.room-code-input:focus {
+  border-color: rgba(100, 100, 255, 0.7);
+  box-shadow: 0 0 15px rgba(100, 100, 255, 0.2);
+}
+
+.room-code-input::placeholder {
+  color: rgba(150, 150, 200, 0.3);
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+.room-code-display {
+  margin: 20px 0;
+  padding: 20px;
+  border-radius: 12px;
+  background: rgba(0, 255, 136, 0.05);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+}
+
 /* ===== POWER-UP INDICATORS ===== */
 .powerup-indicators {
   display: flex;

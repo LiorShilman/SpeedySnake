@@ -110,10 +110,10 @@ function getAllSnakes(players) {
 
 export const useGameStore = create((set, get) => ({
   // Mode
-  mode: 'single', // 'single' | 'versus'
+  mode: 'single', // 'single' | 'versus' | 'online'
 
   // Game state
-  gameState: 'menu',
+  gameState: 'menu', // 'menu' | 'lobby' | 'playing' | 'paused' | 'gameOver' | 'levelComplete'
   board: null,
   tickTimestamp: 0,
   food: null,
@@ -155,8 +155,16 @@ export const useGameStore = create((set, get) => ({
   isRecording: false,
   bestReplay: JSON.parse(localStorage.getItem('snakeBestReplay') || 'null'),
 
-  // Winner (for versus)
+  // Winner (for versus/online)
   winner: null,
+
+  // Online multiplayer
+  roomCode: null,
+  myPlayerId: null,
+  connected: false,
+  opponentConnected: false,
+  lobbyStatus: null, // 'waiting' | 'joined'
+  onlineError: null,
 
   setDifficulty: (d) => set({ difficulty: d }),
   setSpeed: (s) => set({ speed: s }),

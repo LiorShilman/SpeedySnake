@@ -7,7 +7,121 @@ import {
   playPortalSound, playShieldSound, playPowerupSound,
   startMusic, stopMusic,
 } from './SoundManager';
+import {
+  connectToServer, createRoom, joinRoom, sendInput,
+  sendStartGame, sendPlayAgain, disconnectFromServer,
+} from '../store/socketManager';
 
+// ===== ONLINE LOBBY =====
+function OnlineLobby() {
+  const [joinCode, setJoinCode] = useState('');
+  const [view, setView] = useState('choose'); // 'choose' | 'create' | 'join'
+  const roomCode = useGameStore(s => s.roomCode);
+  const lobbyStatus = useGameStore(s => s.lobbyStatus);
+  const opponentConnected = useGameStore(s => s.opponentConnected);
+  const onlineError = useGameStore(s => s.onlineError);
+  const myPlayerId = useGameStore(s => s.myPlayerId);
+  const returnToMenu = useGameStore(s => s.returnToMenu);
+
+  const handleCreate = () => {
+    const state = useGameStore.getState();
+    connectToServer();
+    createRoom(state.speed, state.difficulty);
+    setView('create');
+  };
+
+  const handleJoin = () => {
+    if (!joinCode.trim()) return;
+    connectToServer();
+    joinRoom(joinCode);
+    setView('join');
+  };
+
+  const handleStart = () => {
+    sendStartGame();
+  };
+
+  const handleBack = () => {
+    disconnectFromServer();
+    returnToMenu();
+  };
+
+  return (
+    <div className="menu-overlay">
+      <div className="menu-container">
+        <div className="menu-title">
+          <span className="title-snake">ONLINE</span>
+          <span className="title-3d">GAME</span>
+        </div>
+
+        {onlineError && (
+          <div style={{ color: '#ff4444', marginBottom: 15, fontWeight: 'bold' }}>{onlineError}</div>
+        )}
+
+        {!roomCode && view === 'choose' && (
+          <>
+            <button className="start-btn" onClick={handleCreate}>CREATE GAME</button>
+            <div style={{ margin: '20px 0', color: '#888', letterSpacing: 2 }}>OR</div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', alignItems: 'center' }}>
+              <input
+                type="text"
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                placeholder="ROOM CODE"
+                maxLength={4}
+                className="room-code-input"
+              />
+              <button className="menu-btn" onClick={handleJoin}>JOIN</button>
+            </div>
+            <button className="menu-btn" style={{ marginTop: 20 }} onClick={handleBack}>BACK</button>
+          </>
+        )}
+
+        {roomCode && lobbyStatus === 'waiting' && (
+          <>
+            <div className="room-code-display">
+              <div style={{ color: '#888', fontSize: 14, letterSpacing: 2 }}>ROOM CODE</div>
+              <div style={{ fontSize: 48, fontFamily: "'Orbitron', sans-serif", fontWeight: 900, color: '#44ff88', letterSpacing: 8 }}>
+                {roomCode}
+              </div>
+              <div style={{ color: '#666', fontSize: 12, marginTop: 5 }}>Share this code with your friend</div>
+            </div>
+            {!opponentConnected ? (
+              <div style={{ color: '#ffaa00', marginTop: 20, animation: 'pulse 1.5s infinite' }}>
+                Waiting for opponent...
+              </div>
+            ) : (
+              <>
+                <div style={{ color: '#44ff88', marginTop: 20 }}>Opponent connected!</div>
+                {myPlayerId === 0 && (
+                  <button className="start-btn" style={{ marginTop: 15 }} onClick={handleStart}>START GAME</button>
+                )}
+              </>
+            )}
+            <button className="menu-btn" style={{ marginTop: 20 }} onClick={handleBack}>CANCEL</button>
+          </>
+        )}
+
+        {roomCode && lobbyStatus === 'joined' && (
+          <>
+            <div style={{ color: '#44ff88', fontSize: 18, marginBottom: 10 }}>
+              Joined room {roomCode}
+            </div>
+            <div style={{ color: '#ffaa00' }}>
+              Waiting for host to start...
+            </div>
+            <div style={{ color: '#888', marginTop: 10, fontSize: 14 }}>
+              You are Player {(myPlayerId || 0) + 1}
+            </div>
+            <button className="menu-btn" style={{ marginTop: 20 }} onClick={handleBack}>LEAVE</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===== MAIN MENU =====
 function MainMenu() {
   const [selectedSpeed, setSelectedSpeed] = useState(1);
   const [selectedDifficulty, setSelectedDifficulty] = useState(0);
@@ -25,13 +139,19 @@ function MainMenu() {
     setDifficulty(selectedDifficulty);
     setSpeed(selectedSpeed);
     setMode(selectedMode);
+    if (selectedMode === 'online') {
+      // Go to lobby instead of starting game
+      useGameStore.setState({ gameState: 'lobby', mode: 'online' });
+      return;
+    }
     startGame();
   };
 
   const difficulties = ['Beginner', 'Intermediate', 'Expert'];
   const modes = [
     { key: 'single', label: 'SOLO' },
-    { key: 'versus', label: '2 PLAYERS' },
+    { key: 'versus', label: '2P LOCAL' },
+    { key: 'online', label: 'ONLINE' },
   ];
 
   return (
@@ -46,7 +166,6 @@ function MainMenu() {
         {!showLeaderboard ? (
           <>
             <div className="menu-options">
-              {/* Mode selector */}
               <div className="option-group">
                 <label>MODE</label>
                 <div className="option-buttons">
@@ -100,7 +219,9 @@ function MainMenu() {
               <div className="high-score-display">HIGH SCORE: {highScore}</div>
             )}
 
-            <button className="start-btn" onClick={handleStart}>START GAME</button>
+            <button className="start-btn" onClick={handleStart}>
+              {selectedMode === 'online' ? 'FIND GAME' : 'START GAME'}
+            </button>
 
             {leaderboard.length > 0 && (
               <button className="menu-btn" style={{ marginTop: 15 }} onClick={() => setShowLeaderboard(true)}>
@@ -142,26 +263,30 @@ function MainMenu() {
 function HUD() {
   const players = useGameStore(s => s.players);
   const mode = useGameStore(s => s.mode);
+  const myPlayerId = useGameStore(s => s.myPlayerId);
   const level = useGameStore(s => s.level);
   const speed = useGameStore(s => s.speed);
   const highScore = useGameStore(s => s.highScore);
   const bossActive = useGameStore(s => s.bossActive);
   const nearMiss = useGameStore(s => s.nearMiss);
 
+  const isMulti = mode === 'versus' || mode === 'online';
   const p1 = players[0];
   const p2 = players[1];
   const currentLevelInfo = LEVEL_INFO[level - 1];
-
-  // In single mode, use P1 score. In versus, show both.
   const p1Score = p1 ? p1.score : 0;
   const p1FoodRemaining = p1 && currentLevelInfo ? currentLevelInfo.maxFood - p1.foodEaten : 0;
+
+  // In online mode, show "YOU" for own player
+  const p1Label = mode === 'online' ? (myPlayerId === 0 ? 'YOU' : 'OPP') : (isMulti ? 'P1' : 'SCORE');
+  const p2Label = mode === 'online' ? (myPlayerId === 1 ? 'YOU' : 'OPP') : 'P2';
 
   return (
     <div className="hud">
       <div className="hud-left">
         <div className="hud-item score">
-          <span className="hud-label">{mode === 'versus' ? 'P1' : 'SCORE'}</span>
-          <span className="hud-value" style={mode === 'versus' ? { color: '#44ff88' } : {}}>{p1Score}</span>
+          <span className="hud-label">{p1Label}</span>
+          <span className="hud-value" style={isMulti ? { color: '#44ff88' } : {}}>{p1Score}</span>
         </div>
         {mode === 'single' && (
           <div className="hud-item">
@@ -169,9 +294,9 @@ function HUD() {
             <span className="hud-value hud-high">{Math.max(p1Score, highScore)}</span>
           </div>
         )}
-        {mode === 'versus' && p2 && (
+        {isMulti && p2 && (
           <div className="hud-item score">
-            <span className="hud-label">P2</span>
+            <span className="hud-label">{p2Label}</span>
             <span className="hud-value" style={{ color: '#8888ff' }}>{p2.score}</span>
           </div>
         )}
@@ -192,15 +317,13 @@ function HUD() {
           <span className="hud-label">SPEED</span>
           <span className="hud-value">{speed}</span>
         </div>
-        {/* Power-up indicators for P1 */}
         <div className="powerup-indicators">
-          {p1 && p1.scoreMultiplier > 1 && <div className="powerup-badge score-badge">{mode === 'versus' ? 'P1 ' : ''}x{p1.scoreMultiplier} SCORE</div>}
-          {p1 && p1.hasFire && <div className="powerup-badge fire-badge">{mode === 'versus' ? 'P1 ' : ''}FIRE</div>}
-          {p1 && p1.hasShield && <div className="powerup-badge shield-badge">{mode === 'versus' ? 'P1 ' : ''}SHIELD x{p1.shieldHits}</div>}
-          {p1 && p1.hasMagnet && <div className="powerup-badge magnet-badge">{mode === 'versus' ? 'P1 ' : ''}MAGNET {p1.magnetTimer}</div>}
-          {p1 && p1.isSlowMo && <div className="powerup-badge slowmo-badge">{mode === 'versus' ? 'P1 ' : ''}SLOW-MO {p1.slowMoTimer}</div>}
-          {/* P2 power-ups */}
-          {mode === 'versus' && p2 && p2.alive && (
+          {p1 && p1.scoreMultiplier > 1 && <div className="powerup-badge score-badge">{isMulti ? 'P1 ' : ''}x{p1.scoreMultiplier} SCORE</div>}
+          {p1 && p1.hasFire && <div className="powerup-badge fire-badge">{isMulti ? 'P1 ' : ''}FIRE</div>}
+          {p1 && p1.hasShield && <div className="powerup-badge shield-badge">{isMulti ? 'P1 ' : ''}SHIELD x{p1.shieldHits}</div>}
+          {p1 && p1.hasMagnet && <div className="powerup-badge magnet-badge">{isMulti ? 'P1 ' : ''}MAGNET {p1.magnetTimer}</div>}
+          {p1 && p1.isSlowMo && <div className="powerup-badge slowmo-badge">{isMulti ? 'P1 ' : ''}SLOW-MO {p1.slowMoTimer}</div>}
+          {isMulti && p2 && p2.alive && (
             <>
               {p2.scoreMultiplier > 1 && <div className="powerup-badge score-badge" style={{ borderColor: '#8888ff' }}>P2 x{p2.scoreMultiplier} SCORE</div>}
               {p2.hasFire && <div className="powerup-badge fire-badge" style={{ borderColor: '#8888ff' }}>P2 FIRE</div>}
@@ -233,7 +356,9 @@ function GameOverOverlay() {
   const level = useGameStore(s => s.level);
   const startGame = useGameStore(s => s.startGame);
   const returnToMenu = useGameStore(s => s.returnToMenu);
+  const myPlayerId = useGameStore(s => s.myPlayerId);
 
+  const isMulti = mode === 'versus' || mode === 'online';
   const p1 = players[0];
   const p2 = players[1];
   const p1Score = p1 ? p1.score : 0;
@@ -241,17 +366,42 @@ function GameOverOverlay() {
   const bestScore = Math.max(p1Score, p2Score);
   const isNewHighScore = bestScore >= highScore && bestScore > 0;
 
+  const handlePlayAgain = () => {
+    playMenuSound();
+    if (mode === 'online') {
+      sendPlayAgain();
+    } else {
+      startGame();
+    }
+  };
+
+  const handleMenu = () => {
+    playMenuSound();
+    if (mode === 'online') disconnectFromServer();
+    returnToMenu();
+  };
+
+  // In online mode, show "YOU WIN" / "YOU LOSE"
+  let winnerText = null;
+  if (isMulti && winner !== null) {
+    if (mode === 'online') {
+      winnerText = winner === myPlayerId ? 'YOU WIN!' : 'YOU LOSE!';
+    } else {
+      winnerText = `PLAYER ${winner + 1} WINS!`;
+    }
+  }
+
   return (
     <div className="gameover-overlay">
       <div className="gameover-container">
         {isNewHighScore && <div className="new-highscore">NEW HIGH SCORE!</div>}
 
-        {mode === 'versus' && winner !== null && (
-          <div className="winner-banner" style={{ color: winner === 0 ? '#44ff88' : '#8888ff' }}>
-            PLAYER {winner + 1} WINS!
+        {isMulti && winnerText && (
+          <div className="winner-banner" style={{ color: (mode === 'online' ? winner === myPlayerId : winner === 0) ? '#44ff88' : '#ff4488' }}>
+            {winnerText}
           </div>
         )}
-        {mode === 'versus' && winner === null && (
+        {isMulti && winner === null && (
           <div className="winner-banner" style={{ color: '#ffcc00' }}>DRAW!</div>
         )}
 
@@ -265,15 +415,15 @@ function GameOverOverlay() {
             </>
           ) : (
             <>
-              <div className="stat-row"><span style={{ color: '#44ff88' }}>P1 Score</span><span>{p1Score}</span></div>
-              <div className="stat-row"><span style={{ color: '#8888ff' }}>P2 Score</span><span>{p2Score}</span></div>
+              <div className="stat-row"><span style={{ color: '#44ff88' }}>{mode === 'online' && myPlayerId === 0 ? 'You' : 'P1'}</span><span>{p1Score}</span></div>
+              <div className="stat-row"><span style={{ color: '#8888ff' }}>{mode === 'online' && myPlayerId === 1 ? 'You' : 'P2'}</span><span>{p2Score}</span></div>
               <div className="stat-row"><span>Level Reached</span><span>{level}</span></div>
             </>
           )}
         </div>
         <div className="gameover-buttons">
-          <button className="start-btn" onClick={() => { playMenuSound(); startGame(); }}>PLAY AGAIN</button>
-          <button className="menu-btn" onClick={() => { playMenuSound(); returnToMenu(); }}>MENU</button>
+          <button className="start-btn" onClick={handlePlayAgain}>PLAY AGAIN</button>
+          <button className="menu-btn" onClick={handleMenu}>MENU</button>
         </div>
       </div>
     </div>
@@ -285,32 +435,35 @@ function LevelCompleteOverlay() {
   const players = useGameStore(s => s.players);
   const mode = useGameStore(s => s.mode);
   const startLevel = useGameStore(s => s.startLevel);
-  const bossActive = level === 3 || level === 6;
 
   const p1Score = players[0] ? players[0].score : 0;
   const p2Score = players[1] ? players[1].score : 0;
+  const isMulti = mode === 'versus' || mode === 'online';
 
   useEffect(() => {
     playLevelUpSound();
-    const timer = setTimeout(() => {
-      startLevel(level);
-    }, 2500);
-    return () => clearTimeout(timer);
-  }, [level, startLevel]);
+    // Only auto-start locally for non-online modes
+    if (mode !== 'online') {
+      const timer = setTimeout(() => {
+        startLevel(level);
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [level, startLevel, mode]);
 
   return (
     <div className="level-complete-overlay">
       <div className="level-complete-container">
         <div className="level-complete-title">LEVEL COMPLETE!</div>
         <div className="level-complete-score">
-          {mode === 'single' ? (
+          {!isMulti ? (
             `Score: ${p1Score}`
           ) : (
             <>P1: {p1Score} | P2: {p2Score}</>
           )}
         </div>
         <div className="level-complete-next">
-          {bossActive ? 'BOSS LEVEL INCOMING!' : `Next: Level ${level}`}
+          Next: Level {level}
         </div>
       </div>
     </div>
@@ -319,6 +472,7 @@ function LevelCompleteOverlay() {
 
 export default function GameUI() {
   const gameState = useGameStore(s => s.gameState);
+  const mode = useGameStore(s => s.mode);
   const tick = useGameStore(s => s.tick);
   const setDirection = useGameStore(s => s.setDirection);
   const togglePause = useGameStore(s => s.togglePause);
@@ -330,31 +484,24 @@ export default function GameUI() {
   // Sound effects based on state changes
   useEffect(() => {
     const unsubscribe = useGameStore.subscribe((state, prevState) => {
-      // Check any player ate food
       const currPlayers = state.players;
       const prevPlayers = prevState.players;
       for (const pid of Object.keys(currPlayers)) {
         const cp = currPlayers[pid];
         const pp = prevPlayers[pid];
         if (!pp) continue;
-        if (cp.foodEaten > pp.foodEaten) {
-          playEatSound();
-        }
+        if (cp.foodEaten > pp.foodEaten) playEatSound();
         if (cp.hasFire && !pp.hasFire) playFirePickupSound();
         if (!cp.hasFire && pp.hasFire && state.gameState === 'playing') playFireShootSound();
         if (cp.hasShield && !pp.hasShield) playPowerupSound();
         if (cp.hasMagnet && !pp.hasMagnet) playPowerupSound();
         if (cp.isSlowMo && !pp.isSlowMo) playPowerupSound();
         if (cp.shieldHits < pp.shieldHits && pp.shieldHits > 0) playShieldSound();
-        // Portal sound: detect teleportation
         if (cp.snake.length > 0 && pp.snake.length > 0) {
           const h = cp.snake[cp.snake.length - 1];
           const ph = pp.snake[pp.snake.length - 1];
-          if (Math.abs(h.x - ph.x) > 2 || Math.abs(h.y - ph.y) > 2) {
-            playPortalSound();
-          }
+          if (Math.abs(h.x - ph.x) > 2 || Math.abs(h.y - ph.y) > 2) playPortalSound();
         }
-        // Death
         if (!cp.alive && pp.alive) playDeathSound();
       }
       if (state.gameState === 'gameOver' && prevState.gameState !== 'gameOver') playDeathSound();
@@ -372,7 +519,7 @@ export default function GameUI() {
     return () => stopMusic();
   }, [gameState, level, speed]);
 
-  // Game loop with dynamic tick rate
+  // Game loop - only for local modes (not online)
   const tickRef = useRef(tick);
   const getTickRateRef = useRef(getTickRate);
   useEffect(() => {
@@ -381,7 +528,8 @@ export default function GameUI() {
   }, [tick, getTickRate]);
 
   useEffect(() => {
-    if (gameState !== 'playing') return;
+    // In online mode, server drives the tick
+    if (gameState !== 'playing' || mode === 'online') return;
     let timerId;
     const loop = () => {
       tickRef.current();
@@ -389,38 +537,54 @@ export default function GameUI() {
     };
     timerId = setTimeout(loop, getTickRateRef.current());
     return () => clearTimeout(timerId);
-  }, [gameState]);
+  }, [gameState, mode]);
 
-  // Keyboard input: P1 = Arrows + Ctrl, P2 = WASD + Shift
+  // Keyboard input
   const handleKeyDown = useCallback((e) => {
-    switch (e.key) {
-      // P1: Arrow keys
-      case 'ArrowUp':
-        e.preventDefault(); setDirection(0, { x: 0, y: -1 }); break;
-      case 'ArrowDown':
-        e.preventDefault(); setDirection(0, { x: 0, y: 1 }); break;
-      case 'ArrowLeft':
-        e.preventDefault(); setDirection(0, { x: -1, y: 0 }); break;
-      case 'ArrowRight':
-        e.preventDefault(); setDirection(0, { x: 1, y: 0 }); break;
-      case 'Control':
-        e.preventDefault(); shootFire(0); break;
+    const isOnline = useGameStore.getState().mode === 'online';
 
-      // P2: WASD + Shift (only active in versus mode)
-      case 'w': case 'W':
-        e.preventDefault(); setDirection(1, { x: 0, y: -1 }); break;
-      case 's': case 'S':
-        e.preventDefault(); setDirection(1, { x: 0, y: 1 }); break;
-      case 'a': case 'A':
-        e.preventDefault(); setDirection(1, { x: -1, y: 0 }); break;
-      case 'd': case 'D':
-        e.preventDefault(); setDirection(1, { x: 1, y: 0 }); break;
-      case 'Shift':
-        e.preventDefault(); shootFire(1); break;
-
-      // Shared
-      case ' ':
-        e.preventDefault(); togglePause(); break;
+    if (isOnline) {
+      // Online: send inputs to server, arrows/WASD both control own snake
+      switch (e.key) {
+        case 'ArrowUp': case 'w': case 'W':
+          e.preventDefault(); sendInput({ type: 'direction', dir: { x: 0, y: -1 } }); break;
+        case 'ArrowDown': case 's': case 'S':
+          e.preventDefault(); sendInput({ type: 'direction', dir: { x: 0, y: 1 } }); break;
+        case 'ArrowLeft': case 'a': case 'A':
+          e.preventDefault(); sendInput({ type: 'direction', dir: { x: -1, y: 0 } }); break;
+        case 'ArrowRight': case 'd': case 'D':
+          e.preventDefault(); sendInput({ type: 'direction', dir: { x: 1, y: 0 } }); break;
+        case 'Control': case 'Shift':
+          e.preventDefault(); sendInput({ type: 'fire' }); break;
+        case ' ':
+          e.preventDefault(); break; // No pause in online
+      }
+    } else {
+      // Local: P1=arrows+Ctrl, P2=WASD+Shift
+      switch (e.key) {
+        case 'ArrowUp':
+          e.preventDefault(); setDirection(0, { x: 0, y: -1 }); break;
+        case 'ArrowDown':
+          e.preventDefault(); setDirection(0, { x: 0, y: 1 }); break;
+        case 'ArrowLeft':
+          e.preventDefault(); setDirection(0, { x: -1, y: 0 }); break;
+        case 'ArrowRight':
+          e.preventDefault(); setDirection(0, { x: 1, y: 0 }); break;
+        case 'Control':
+          e.preventDefault(); shootFire(0); break;
+        case 'w': case 'W':
+          e.preventDefault(); setDirection(1, { x: 0, y: -1 }); break;
+        case 's': case 'S':
+          e.preventDefault(); setDirection(1, { x: 0, y: 1 }); break;
+        case 'a': case 'A':
+          e.preventDefault(); setDirection(1, { x: -1, y: 0 }); break;
+        case 'd': case 'D':
+          e.preventDefault(); setDirection(1, { x: 1, y: 0 }); break;
+        case 'Shift':
+          e.preventDefault(); shootFire(1); break;
+        case ' ':
+          e.preventDefault(); togglePause(); break;
+      }
     }
   }, [setDirection, shootFire, togglePause]);
 
@@ -429,9 +593,26 @@ export default function GameUI() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  // Touch control handler for online
+  const touchDir = (dir) => {
+    if (mode === 'online') {
+      sendInput({ type: 'direction', dir });
+    } else {
+      setDirection(0, dir);
+    }
+  };
+  const touchFire = () => {
+    if (mode === 'online') {
+      sendInput({ type: 'fire' });
+    } else {
+      shootFire(0);
+    }
+  };
+
   return (
     <>
       {gameState === 'menu' && <MainMenu />}
+      {gameState === 'lobby' && <OnlineLobby />}
       {(gameState === 'playing' || gameState === 'paused') && <HUD />}
       {gameState === 'paused' && <PauseOverlay />}
       {gameState === 'gameOver' && <GameOverOverlay />}
@@ -439,11 +620,11 @@ export default function GameUI() {
 
       {(gameState === 'playing') && (
         <div className="touch-controls">
-          <button className="touch-btn touch-up" onTouchStart={() => setDirection(0, { x: 0, y: -1 })}>^</button>
-          <button className="touch-btn touch-left" onTouchStart={() => setDirection(0, { x: -1, y: 0 })}>&lt;</button>
-          <button className="touch-btn touch-right" onTouchStart={() => setDirection(0, { x: 1, y: 0 })}>&gt;</button>
-          <button className="touch-btn touch-down" onTouchStart={() => setDirection(0, { x: 0, y: 1 })}>v</button>
-          <button className="touch-btn touch-fire" onTouchStart={() => shootFire(0)}>FIRE</button>
+          <button className="touch-btn touch-up" onTouchStart={() => touchDir({ x: 0, y: -1 })}>^</button>
+          <button className="touch-btn touch-left" onTouchStart={() => touchDir({ x: -1, y: 0 })}>&lt;</button>
+          <button className="touch-btn touch-right" onTouchStart={() => touchDir({ x: 1, y: 0 })}>&gt;</button>
+          <button className="touch-btn touch-down" onTouchStart={() => touchDir({ x: 0, y: 1 })}>v</button>
+          <button className="touch-btn touch-fire" onTouchStart={() => touchFire()}>FIRE</button>
         </div>
       )}
     </>
